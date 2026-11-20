@@ -18,18 +18,13 @@ function getBaseUrl() {
   return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
 }
 
-export async function apiClient<T>(
-  path: string,
-  init?: RequestInit & { accessToken?: string | null },
-): Promise<T> {
-  const { accessToken, headers, ...rest } = init ?? {};
-
+export async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${getBaseUrl()}${path}`, {
-    ...rest,
+    ...init,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...headers,
+      ...init?.headers,
     },
   });
 

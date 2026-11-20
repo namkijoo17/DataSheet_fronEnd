@@ -8,3 +8,9 @@ export function login(body: LoginRequest) {
     body: JSON.stringify(body),
   });
 }
+
+export function logout() {
+  return apiClient<void>('/api/auth/logout', {
+    method: 'POST',
+  });
+}

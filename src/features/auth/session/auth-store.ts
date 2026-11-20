@@ -3,37 +3,29 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { AuthUser, LoginResponse } from '@/features/auth/login/model/login-types';
+import type { AuthUser } from '@/features/auth/login/model/login-types';
 
 type AuthState = {
-  accessToken: string | null;
-  tokenType: string | null;
-  expiresAt: number | null;
   user: AuthUser | null;
-  setSession: (response: LoginResponse) => void;
+  expiresAt: number | null;
+  setSession: (user: AuthUser, expiresInMs: number) => void;
   clearSession: () => void;
 };
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      accessToken: null,
-      tokenType: null,
-      expiresAt: null,
       user: null,
-      setSession: (response) =>
+      expiresAt: null,
+      setSession: (user, expiresInMs) =>
         set({
-          accessToken: response.accessToken,
-          tokenType: response.tokenType,
-          expiresAt: Date.now() + response.expiresInMs,
-          user: response.user,
+          user,
+          expiresAt: Date.now() + expiresInMs,
         }),
       clearSession: () =>
         set({
-          accessToken: null,
-          tokenType: null,
-          expiresAt: null,
           user: null,
+          expiresAt: null,
         }),
     }),
     {

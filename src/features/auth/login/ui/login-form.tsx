@@ -40,7 +40,7 @@ export function LoginForm() {
     try {
       const response = await login(values);
       setIsLocked(false);
-      setSession(response);
+      setSession(response.user, response.expiresInMs);
       router.push('/dashboard');
     } catch (error) {
       if (error instanceof ApiError) {

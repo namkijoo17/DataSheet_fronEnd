@@ -11,7 +11,6 @@ export type LoginRequest = {
 };
 
 export type LoginResponse = {
-  accessToken: string;
   tokenType: string;
   expiresInMs: number;
   user: AuthUser;
