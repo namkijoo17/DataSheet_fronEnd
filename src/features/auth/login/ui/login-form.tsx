@@ -6,20 +6,20 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CircleAlert } from 'lucide-react';
 
+import { useAuthStore } from '@/features/auth/session/auth-store';
+import { ApiError } from '@/shared/api/client';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 
-import {
-  loginSchema,
-  MAX_LOGIN_ATTEMPTS,
-  type LoginFormValues,
-} from '../model/login-schema';
+import { login } from '../api/login';
+import { loginSchema, type LoginFormValues } from '../model/login-schema';
 import { BrandHeader } from './brand-header';
 
 export function LoginForm() {
   const router = useRouter();
-  const [failCount, setFailCount] = useState(0);
+  const setSession = useAuthStore((state) => state.setSession);
+  const [isLocked, setIsLocked] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -37,20 +37,22 @@ export function LoginForm() {
   const onSubmit = async (values: LoginFormValues) => {
     setServerError(null);
 
-    // TODO: 실제 인증 API 연동
-    const isValid = values.employeeId === 'E20418' && values.password === 'password';
+    try {
+      const response = await login(values);
+      setIsLocked(false);
+      setSession(response);
+      router.push('/dashboard');
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setServerError(error.message);
+        if (error.code === 'ACCOUNT_LOCKED') {
+          setIsLocked(true);
+        }
+        return;
+      }
 
-    if (!isValid) {
-      const nextCount = failCount + 1;
-      setFailCount(nextCount);
-      setServerError(
-        `비밀번호가 일치하지 않습니다 (${nextCount}/${MAX_LOGIN_ATTEMPTS}회). ${MAX_LOGIN_ATTEMPTS}회 실패 시 계정이 잠깁니다.`,
-      );
-      return;
+      setServerError('로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     }
-
-    setFailCount(0);
-    router.push('/dashboard');
   };
 
   return (
@@ -110,10 +112,10 @@ export function LoginForm() {
 
         <Button
           type="submit"
-          disabled={isSubmitting || failCount >= MAX_LOGIN_ATTEMPTS}
+          disabled={isSubmitting || isLocked}
           className="mt-2 h-14 w-full rounded-2xl bg-[#3c3c3c] text-lg font-semibold text-white hover:bg-[#2f2f2f]"
         >
-          로그인
+          {isSubmitting ? '로그인 중...' : '로그인'}
         </Button>
       </form>
 
