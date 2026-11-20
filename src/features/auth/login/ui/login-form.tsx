@@ -12,7 +12,8 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Label } from '@/shared/ui/label';
 
-import { login } from '../api/login';
+import { login } from '@/features/auth/api/auth-api';
+
 import { loginSchema, type LoginFormValues } from '../model/login-schema';
 import { BrandHeader } from './brand-header';
 
@@ -40,7 +41,7 @@ export function LoginForm() {
     try {
       const response = await login(values);
       setIsLocked(false);
-      setSession(response.user, response.expiresInMs);
+      setSession(response);
       router.push('/dashboard');
     } catch (error) {
       if (error instanceof ApiError) {
