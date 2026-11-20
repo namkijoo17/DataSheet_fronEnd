@@ -13,9 +13,9 @@ export function BottomNav() {
   return (
     <nav
       aria-label="메인 메뉴"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e8eaed] bg-white pb-[env(safe-area-inset-bottom)]"
+      className="sticky bottom-0 z-40 border-t border-[#e8eaed] bg-white pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="mx-auto grid h-14 max-w-3xl grid-cols-4 md:h-16">
+      <ul className="grid h-14 grid-cols-4 md:h-16">
         {MAIN_NAV_ITEMS.map((item) => {
           const active = isNavActive(pathname, item.href);
 
