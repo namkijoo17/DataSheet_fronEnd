@@ -61,13 +61,12 @@ async function refreshAccessToken(): Promise<boolean> {
   return refreshPromise;
 }
 
-export async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
+async function authenticatedFetch(path: string, init?: RequestInit) {
   const request = () =>
     fetch(`${getBaseUrl()}${path}`, {
       ...init,
       credentials: 'include',
       headers: {
-        'Content-Type': 'application/json',
         ...init?.headers,
       },
     });
@@ -82,18 +81,40 @@ export async function apiClient<T>(path: string, init?: RequestInit): Promise<T>
     response = await request();
   }
 
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
-    throw new ApiError(
-      response.status,
-      body?.code ?? 'UNKNOWN',
-      body?.message ?? '요청에 실패했습니다.',
-    );
-  }
+  return response;
+}
+
+async function throwIfNotOk(response: Response): Promise<void> {
+  if (response.ok) return;
+
+  const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
+  throw new ApiError(
+    response.status,
+    body?.code ?? 'UNKNOWN',
+    body?.message ?? '요청에 실패했습니다.',
+  );
+}
+
+export async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await authenticatedFetch(path, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...init?.headers,
+    },
+  });
+
+  await throwIfNotOk(response);
 
   if (response.status === 204) {
     return undefined as T;
   }
 
   return (await response.json()) as T;
+}
+
+export async function apiClientBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await authenticatedFetch(path, init);
+  await throwIfNotOk(response);
+  return response.blob();
 }
