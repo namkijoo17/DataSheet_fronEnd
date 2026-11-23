@@ -7,21 +7,26 @@ import { ChevronRight, LayoutGrid, List } from 'lucide-react';
 import { Input } from '@/shared/ui/input';
 import { cn } from '@/shared/lib/utils';
 
-import { formatFileSize, formatLastModified } from '../lib/format';
-import type { DatasheetFile } from '../model/datasheet-types';
+import { formatRevision } from '../lib/format';
+import type { DatasheetSummary } from '../model/datasheet-types';
 import { useDatasheets } from '../model/use-datasheets';
 import { DatasheetFilePreview } from './datasheet-file-preview';
 
 type ViewMode = 'list' | 'card';
 
-function matchesQuery(file: DatasheetFile, query: string) {
+function matchesQuery(sheet: DatasheetSummary, query: string) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
-  return file.fileName.toLowerCase().includes(normalized);
+
+  return (
+    sheet.code.toLowerCase().includes(normalized) ||
+    sheet.name.toLowerCase().includes(normalized) ||
+    sheet.fileName.toLowerCase().includes(normalized)
+  );
 }
 
-function getDetailHref(fileName: string) {
-  return `/settings/datasheets/${encodeURIComponent(fileName)}`;
+function getDetailHref(id: number) {
+  return `/settings/datasheets/${id}`;
 }
 
 export function DatasheetManagement() {
@@ -29,15 +34,15 @@ export function DatasheetManagement() {
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const sheets = data ?? [];
 
   useEffect(() => {
-    if (!selectedFileName && sheets.length > 0) {
-      setSelectedFileName(sheets[0].fileName);
+    if (selectedId == null && sheets.length > 0) {
+      setSelectedId(sheets[0].id);
     }
-  }, [selectedFileName, sheets]);
+  }, [selectedId, sheets]);
 
   const filteredSheets = sheets.filter((sheet) =>
     matchesQuery(sheet, deferredQuery),
@@ -76,7 +81,7 @@ export function DatasheetManagement() {
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="파일명 검색"
+          placeholder="코드 · 이름 · 파일명 검색"
           className="h-12 flex-1 rounded-xl border-[#d8dce3] bg-white px-4 text-base text-[#1f1f1f] placeholder:text-[#9aa0a6]"
         />
 
@@ -119,13 +124,13 @@ export function DatasheetManagement() {
       {viewMode === 'list' ? (
         <ul className="space-y-3">
           {filteredSheets.map((sheet) => {
-            const isSelected = sheet.fileName === selectedFileName;
+            const isSelected = sheet.id === selectedId;
 
             return (
-              <li key={sheet.fileName}>
+              <li key={sheet.id}>
                 <Link
-                  href={getDetailHref(sheet.fileName)}
-                  onClick={() => setSelectedFileName(sheet.fileName)}
+                  href={getDetailHref(sheet.id)}
+                  onClick={() => setSelectedId(sheet.id)}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-xl bg-white px-4 py-4 text-left transition-colors',
                     isSelected
@@ -135,11 +140,13 @@ export function DatasheetManagement() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-base font-bold text-[#1f1f1f]">
-                      {sheet.fileName}
+                      {sheet.code}
+                    </p>
+                    <p className="mt-1 truncate text-sm text-[#1f1f1f]">
+                      {sheet.name}
                     </p>
                     <p className="mt-1 truncate text-sm text-[#8b8f96]">
-                      {formatFileSize(sheet.sizeBytes)} ·{' '}
-                      {formatLastModified(sheet.lastModified)}
+                      {formatRevision(sheet.revision)} · {sheet.fileName}
                     </p>
                   </div>
                   <ChevronRight
@@ -154,13 +161,13 @@ export function DatasheetManagement() {
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {filteredSheets.map((sheet) => {
-            const isSelected = sheet.fileName === selectedFileName;
+            const isSelected = sheet.id === selectedId;
 
             return (
-              <li key={sheet.fileName}>
+              <li key={sheet.id}>
                 <Link
-                  href={getDetailHref(sheet.fileName)}
-                  onClick={() => setSelectedFileName(sheet.fileName)}
+                  href={getDetailHref(sheet.id)}
+                  onClick={() => setSelectedId(sheet.id)}
                   className={cn(
                     'block overflow-hidden rounded-xl bg-white transition-colors',
                     isSelected
@@ -168,14 +175,19 @@ export function DatasheetManagement() {
                       : 'border border-transparent',
                   )}
                 >
-                  <DatasheetFilePreview file={sheet} />
+                  <DatasheetFilePreview
+                    datasheetId={sheet.id}
+                    title={sheet.name}
+                  />
                   <div className="space-y-1 px-4 py-3">
-                    <p className="line-clamp-2 text-sm font-bold text-[#1f1f1f]">
-                      {sheet.fileName}
+                    <p className="truncate text-sm font-bold text-[#1f1f1f]">
+                      {sheet.code}
+                    </p>
+                    <p className="line-clamp-2 text-sm text-[#1f1f1f]">
+                      {sheet.name}
                     </p>
                     <p className="truncate text-xs text-[#8b8f96]">
-                      {formatFileSize(sheet.sizeBytes)} ·{' '}
-                      {formatLastModified(sheet.lastModified)}
+                      {formatRevision(sheet.revision)} · {sheet.fileName}
                     </p>
                   </div>
                 </Link>

@@ -1,21 +1,24 @@
 import { apiClient, apiClientBlob } from '@/shared/api/client';
 
-import type { DatasheetFile } from '../model/datasheet-types';
+import type {
+  DatasheetDetail,
+  DatasheetSummary,
+} from '../model/datasheet-types';
 
 export function fetchDatasheets() {
-  return apiClient<DatasheetFile[]>('/api/datasheets', {
+  return apiClient<DatasheetSummary[]>('/api/datasheets', {
     method: 'GET',
   });
 }
 
-export function getDatasheetFileUrl(fileName: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
-  return `${baseUrl}/api/datasheets/${encodeURIComponent(fileName)}/file`;
+export function fetchDatasheetDetail(id: number) {
+  return apiClient<DatasheetDetail>(`/api/datasheets/${id}`, {
+    method: 'GET',
+  });
 }
 
-export function fetchDatasheetFileBlob(fileName: string) {
-  return apiClientBlob(
-    `/api/datasheets/${encodeURIComponent(fileName)}/file`,
-    { method: 'GET' },
-  );
+export function fetchDatasheetFileBlob(id: number) {
+  return apiClientBlob(`/api/datasheets/${id}/file`, {
+    method: 'GET',
+  });
 }

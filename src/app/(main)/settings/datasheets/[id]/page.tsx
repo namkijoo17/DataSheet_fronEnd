@@ -5,26 +5,26 @@ import { Suspense, use } from 'react';
 import { DatasheetDetail } from '@/features/settings/ui/datasheet-detail';
 
 type DatasheetDetailPageProps = {
-  params: Promise<{ fileName: string }>;
+  params: Promise<{ id: string }>;
 };
-
-function decodeFileName(value: string) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
 
 function DatasheetDetailContent({
   params,
 }: {
-  params: Promise<{ fileName: string }>;
+  params: Promise<{ id: string }>;
 }) {
-  const { fileName: rawFileName } = use(params);
-  const fileName = decodeFileName(rawFileName);
+  const { id: rawId } = use(params);
+  const datasheetId = Number(rawId);
 
-  return <DatasheetDetail fileName={fileName} />;
+  if (!Number.isFinite(datasheetId) || datasheetId <= 0) {
+    return (
+      <p className="rounded-xl bg-white px-4 py-8 text-center text-sm text-[#8b8f96]">
+        올바르지 않은 데이터시트입니다.
+      </p>
+    );
+  }
+
+  return <DatasheetDetail datasheetId={datasheetId} />;
 }
 
 export default function DatasheetDetailPage({

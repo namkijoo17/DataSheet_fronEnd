@@ -4,14 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
 
 import { fetchDatasheetFileBlob } from '../api/datasheet-api';
-import { isImageFile, isPdfFile } from '../lib/file-type';
-import type { DatasheetFile } from '../model/datasheet-types';
 
 type DatasheetFilePreviewProps = {
-  file: DatasheetFile;
+  datasheetId: number;
+  title: string;
 };
 
-export function DatasheetFilePreview({ file }: DatasheetFilePreviewProps) {
+export function DatasheetFilePreview({
+  datasheetId,
+  title,
+}: DatasheetFilePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function DatasheetFilePreview({ file }: DatasheetFilePreviewProps) {
 
     setStatus('loading');
 
-    fetchDatasheetFileBlob(file.fileName)
+    fetchDatasheetFileBlob(datasheetId)
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob);
         if (cancelled) {
@@ -63,40 +65,28 @@ export function DatasheetFilePreview({ file }: DatasheetFilePreviewProps) {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [file.fileName, isVisible]);
+  }, [datasheetId, isVisible]);
 
   return (
     <div
       ref={containerRef}
       className="relative aspect-[3/4] overflow-hidden rounded-t-xl bg-[#eceef1]"
     >
-      {status === 'ready' && previewUrl && isPdfFile(file) && (
+      {status === 'ready' && previewUrl && (
         <iframe
-          title={`${file.fileName} 미리보기`}
+          title={`${title} 미리보기`}
           src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
           className="pointer-events-none absolute inset-0 h-[140%] w-full origin-top scale-[1.02] border-0 bg-white"
         />
       )}
 
-      {status === 'ready' && previewUrl && isImageFile(file) && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={previewUrl}
-          alt={file.fileName}
-          className="absolute inset-0 h-full w-full object-contain bg-white"
-        />
-      )}
-
-      {status === 'ready' &&
-        previewUrl &&
-        !isPdfFile(file) &&
-        !isImageFile(file) && <PreviewFallback label="미리보기 미지원" />}
-
       {(status === 'idle' || status === 'loading') && (
         <PreviewFallback label="미리보기 준비 중..." />
       )}
 
-      {status === 'error' && <PreviewFallback label="미리보기를 불러오지 못했습니다" />}
+      {status === 'error' && (
+        <PreviewFallback label="미리보기를 불러오지 못했습니다" />
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { AuthSessionManager } from '@/features/auth/session/auth-session-manager';
 import { AppHeader, BottomNav } from '@/widgets/app-shell';
 import { APP_SHELL_MAX_WIDTH_CLASS } from '@/widgets/app-shell/model/layout';
 import { cn } from '@/shared/lib/utils';
@@ -15,6 +16,7 @@ export default function MainLayout({
           APP_SHELL_MAX_WIDTH_CLASS,
         )}
       >
+        <AuthSessionManager />
         <AppHeader />
         <main className="flex-1 px-5 pb-6 pt-6 md:px-6">{children}</main>
         <BottomNav />

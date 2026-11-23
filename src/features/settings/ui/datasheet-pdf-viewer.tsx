@@ -6,48 +6,19 @@ import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 
 import { fetchDatasheetFileBlob } from '../api/datasheet-api';
 import { ensurePdfjsWorker } from '../lib/pdfjs';
-import { isImageFile, isPdfFile } from '../lib/file-type';
-import type { DatasheetField } from '../model/field-types';
+import type { DatasheetPdfRegion } from '../model/datasheet-types';
 
 type DatasheetPdfViewerProps = {
-  fileName: string;
-  contentType?: string;
-  selectedField: DatasheetField | null;
+  datasheetId: number;
+  selectedLabel?: string | null;
+  selectedRegion?: DatasheetPdfRegion | null;
 };
 
 export function DatasheetPdfViewer({
-  fileName,
-  contentType = '',
-  selectedField,
+  datasheetId,
+  selectedLabel,
+  selectedRegion,
 }: DatasheetPdfViewerProps) {
-  const file = { fileName, contentType, sizeBytes: 0, lastModified: '' };
-  const isPdf = isPdfFile(file);
-  const isImage = isImageFile(file);
-
-  if (isPdf) {
-    return (
-      <PdfPagesViewer fileName={fileName} selectedField={selectedField} />
-    );
-  }
-
-  if (isImage) {
-    return <ImageViewer fileName={fileName} selectedField={selectedField} />;
-  }
-
-  return (
-    <div className="relative flex h-full min-h-[420px] items-center justify-center overflow-hidden rounded-2xl border border-[#e8eaed] bg-white">
-      <ViewerFallback label="이 파일 형식은 위치 표시를 지원하지 않습니다." />
-    </div>
-  );
-}
-
-function PdfPagesViewer({
-  fileName,
-  selectedField,
-}: {
-  fileName: string;
-  selectedField: DatasheetField | null;
-}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -56,6 +27,7 @@ function PdfPagesViewer({
 
   useEffect(() => {
     let cancelled = false;
+    let loadingTask: ReturnType<typeof getDocument> | null = null;
     let doc: PDFDocumentProxy | null = null;
 
     setStatus('loading');
@@ -63,13 +35,14 @@ function PdfPagesViewer({
     setPageCount(0);
     ensurePdfjsWorker();
 
-    fetchDatasheetFileBlob(fileName)
+    fetchDatasheetFileBlob(datasheetId)
       .then(async (blob) => {
         const data = await blob.arrayBuffer();
-        const loadingTask = getDocument({ data });
+        loadingTask = getDocument({ data });
         doc = await loadingTask.promise;
         if (cancelled) {
-          await doc.destroy();
+          await doc.cleanup();
+          await loadingTask.destroy();
           return;
         }
         setPdfDoc(doc);
@@ -82,15 +55,27 @@ function PdfPagesViewer({
 
     return () => {
       cancelled = true;
-      void doc?.destroy();
+      // pdf.js 6: PDFDocumentProxy.destroy 없음 → cleanup + loadingTask.destroy
+      void (async () => {
+        try {
+          await doc?.cleanup();
+        } catch {
+          // ignore
+        }
+        try {
+          await loadingTask?.destroy();
+        } catch {
+          // ignore
+        }
+      })();
     };
-  }, [fileName]);
+  }, [datasheetId]);
 
   useEffect(() => {
-    if (!selectedField) return;
-    const pageNode = pageRefs.current.get(selectedField.pdfRegion.page);
+    if (!selectedRegion) return;
+    const pageNode = pageRefs.current.get(selectedRegion.page);
     pageNode?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [selectedField]);
+  }, [selectedRegion]);
 
   return (
     <div
@@ -111,10 +96,11 @@ function PdfPagesViewer({
                 key={pageNumber}
                 pdfDoc={pdfDoc}
                 pageNumber={pageNumber}
-                selectedField={
-                  selectedField?.pdfRegion.page === pageNumber
-                    ? selectedField
-                    : null
+                selectedLabel={
+                  selectedRegion?.page === pageNumber ? selectedLabel : null
+                }
+                selectedRegion={
+                  selectedRegion?.page === pageNumber ? selectedRegion : null
                 }
                 pageRef={(node) => {
                   if (node) pageRefs.current.set(pageNumber, node);
@@ -132,12 +118,14 @@ function PdfPagesViewer({
 function PdfPage({
   pdfDoc,
   pageNumber,
-  selectedField,
+  selectedLabel,
+  selectedRegion,
   pageRef,
 }: {
   pdfDoc: PDFDocumentProxy;
   pageNumber: number;
-  selectedField: DatasheetField | null;
+  selectedLabel?: string | null;
+  selectedRegion: DatasheetPdfRegion | null;
   pageRef: (node: HTMLDivElement | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -156,7 +144,6 @@ function PdfPage({
       const baseViewport = page.getViewport({ scale: 1 });
       const containerWidth =
         canvas.parentElement?.clientWidth || baseViewport.width;
-      // Retina 등 고해상도 디스플레이에서 선명하게 그리기 위해 DPR 반영
       const dpr = Math.min(window.devicePixelRatio || 1, 3);
       const scale = (containerWidth / baseViewport.width) * dpr;
       const viewport = page.getViewport({ scale });
@@ -191,86 +178,22 @@ function PdfPage({
       className="relative overflow-hidden rounded-xl bg-white shadow-sm"
     >
       <canvas ref={canvasRef} className="block w-full" />
-      {rendered && selectedField && (
+      {rendered && selectedRegion && (
         <div
           className="pointer-events-none absolute rounded-sm border-2 border-[#2563eb] bg-[#2563eb]/15 transition-all duration-300"
           style={{
-            left: `${selectedField.pdfRegion.x}%`,
-            top: `${selectedField.pdfRegion.y}%`,
-            width: `${selectedField.pdfRegion.width}%`,
-            height: `${selectedField.pdfRegion.height}%`,
+            left: `${selectedRegion.x}%`,
+            top: `${selectedRegion.y}%`,
+            width: `${selectedRegion.width}%`,
+            height: `${selectedRegion.height}%`,
           }}
         >
-          <span className="absolute -top-6 left-0 whitespace-nowrap rounded bg-[#2563eb] px-2 py-0.5 text-[11px] font-semibold text-white">
-            {selectedField.label}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ImageViewer({
-  fileName,
-  selectedField,
-}: {
-  fileName: string;
-  selectedField: DatasheetField | null;
-}) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    setStatus('loading');
-    fetchDatasheetFileBlob(fileName)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl);
-          return;
-        }
-        setPreviewUrl(objectUrl);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error');
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [fileName]);
-
-  return (
-    <div className="relative h-full min-h-[420px] overflow-hidden rounded-2xl border border-[#e8eaed] bg-white">
-      {status === 'ready' && previewUrl && (
-        <div className="relative h-full w-full">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={previewUrl}
-            alt={fileName}
-            className="h-full w-full object-contain"
-          />
-          {selectedField && (
-            <div
-              className="pointer-events-none absolute rounded-sm border-2 border-[#1f1f1f] bg-[#1f1f1f]/20 transition-all duration-300"
-              style={{
-                left: `${selectedField.pdfRegion.x}%`,
-                top: `${selectedField.pdfRegion.y}%`,
-                width: `${selectedField.pdfRegion.width}%`,
-                height: `${selectedField.pdfRegion.height}%`,
-              }}
-            />
+          {selectedLabel && (
+            <span className="absolute -top-6 left-0 whitespace-nowrap rounded bg-[#2563eb] px-2 py-0.5 text-[11px] font-semibold text-white">
+              {selectedLabel}
+            </span>
           )}
         </div>
-      )}
-      {status === 'loading' && <ViewerFallback label="이미지를 불러오는 중..." />}
-      {status === 'error' && (
-        <ViewerFallback label="이미지를 불러오지 못했습니다." />
       )}
     </div>
   );

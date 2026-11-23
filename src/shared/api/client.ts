@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/features/auth/session/auth-store';
+import { ACCESS_REFRESH_MARGIN_MS } from '@/features/auth/session/session-constants';
 import type { LoginResponse } from '@/features/auth/login/model/login-types';
 
 export class ApiError extends Error {
@@ -27,9 +28,17 @@ function getBaseUrl() {
   return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
 }
 
+function redirectToLogin() {
+  if (typeof window === 'undefined') return;
+  const { pathname } = window.location;
+  if (pathname === '/login' || pathname.startsWith('/login/')) return;
+  window.location.replace('/login');
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
-async function refreshAccessToken(): Promise<boolean> {
+/** Refresh 쿠키로 Access 재발급. 실패 시 세션 정리. */
+export async function refreshAccessToken(): Promise<boolean> {
   if (refreshPromise) {
     return refreshPromise;
   }
@@ -61,6 +70,31 @@ async function refreshAccessToken(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * Access가 곧 만료되거나 이미 만료면 refresh.
+ * Refresh도 만료면 로그인으로 보냄.
+ */
+export async function ensureValidSession(): Promise<boolean> {
+  const { expiresAt, refreshExpiresAt } = useAuthStore.getState();
+  const now = Date.now();
+
+  if (refreshExpiresAt != null && now >= refreshExpiresAt) {
+    useAuthStore.getState().clearSession();
+    redirectToLogin();
+    return false;
+  }
+
+  if (expiresAt != null && now < expiresAt - ACCESS_REFRESH_MARGIN_MS) {
+    return true;
+  }
+
+  const ok = await refreshAccessToken();
+  if (!ok) {
+    redirectToLogin();
+  }
+  return ok;
+}
+
 async function authenticatedFetch(path: string, init?: RequestInit) {
   const request = () =>
     fetch(`${getBaseUrl()}${path}`, {
@@ -73,12 +107,13 @@ async function authenticatedFetch(path: string, init?: RequestInit) {
 
   let response = await request();
 
-  if (
-    response.status === 401 &&
-    !AUTH_SKIP_REFRESH.has(path) &&
-    (await refreshAccessToken())
-  ) {
-    response = await request();
+  if (response.status === 401 && !AUTH_SKIP_REFRESH.has(path)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      response = await request();
+    } else {
+      redirectToLogin();
+    }
   }
 
   return response;
@@ -86,6 +121,11 @@ async function authenticatedFetch(path: string, init?: RequestInit) {
 
 async function throwIfNotOk(response: Response): Promise<void> {
   if (response.ok) return;
+
+  if (response.status === 401) {
+    useAuthStore.getState().clearSession();
+    redirectToLogin();
+  }
 
   const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
   throw new ApiError(
@@ -117,4 +157,8 @@ export async function apiClientBlob(path: string, init?: RequestInit): Promise<B
   const response = await authenticatedFetch(path, init);
   await throwIfNotOk(response);
   return response.blob();
+}
+
+export function getApiBaseUrl() {
+  return getBaseUrl();
 }
