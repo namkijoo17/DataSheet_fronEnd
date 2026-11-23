@@ -1,6 +1,6 @@
 'use client';
 
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, LayoutGrid, List } from 'lucide-react';
 
@@ -37,16 +37,7 @@ export function DatasheetManagement() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const sheets = data ?? [];
-
-  useEffect(() => {
-    if (selectedId == null && sheets.length > 0) {
-      setSelectedId(sheets[0].id);
-    }
-  }, [selectedId, sheets]);
-
-  const filteredSheets = sheets.filter((sheet) =>
-    matchesQuery(sheet, deferredQuery),
-  );
+  const filteredSheets = sheets.filter((sheet) => matchesQuery(sheet, deferredQuery));
 
   if (isPending) {
     return (
@@ -60,9 +51,7 @@ export function DatasheetManagement() {
     return (
       <div className="space-y-3 rounded-xl bg-white px-4 py-8 text-center">
         <p className="text-sm text-[#8b8f96]">
-          {error instanceof Error
-            ? error.message
-            : '데이터시트 목록을 불러오지 못했습니다.'}
+          {error instanceof Error ? error.message : '데이터시트 목록을 불러오지 못했습니다.'}
         </p>
         <button
           type="button"
@@ -96,9 +85,7 @@ export function DatasheetManagement() {
             onClick={() => setViewMode('list')}
             className={cn(
               'inline-flex size-10 items-center justify-center rounded-lg transition-colors',
-              viewMode === 'list'
-                ? 'bg-[#1f1f1f] text-white'
-                : 'text-[#8b8f96] hover:bg-[#f5f6f7]',
+              viewMode === 'list' ? 'bg-[#1f1f1f] text-white' : 'text-[#8b8f96] hover:bg-[#f5f6f7]',
             )}
           >
             <List className="size-5" aria-hidden />
@@ -110,9 +97,7 @@ export function DatasheetManagement() {
             onClick={() => setViewMode('card')}
             className={cn(
               'inline-flex size-10 items-center justify-center rounded-lg transition-colors',
-              viewMode === 'card'
-                ? 'bg-[#1f1f1f] text-white'
-                : 'text-[#8b8f96] hover:bg-[#f5f6f7]',
+              viewMode === 'card' ? 'bg-[#1f1f1f] text-white' : 'text-[#8b8f96] hover:bg-[#f5f6f7]',
             )}
           >
             <LayoutGrid className="size-5" aria-hidden />
@@ -133,33 +118,22 @@ export function DatasheetManagement() {
                   onClick={() => setSelectedId(sheet.id)}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-xl bg-white px-4 py-4 text-left transition-colors',
-                    isSelected
-                      ? 'border border-[#5f6368]'
-                      : 'border border-transparent',
+                    isSelected ? 'border border-[#5f6368]' : 'border border-transparent',
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-bold text-[#1f1f1f]">
-                      {sheet.code}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-[#1f1f1f]">
-                      {sheet.name}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-[#8b8f96]">
-                      {formatRevision(sheet.revision)} · {sheet.fileName}
-                    </p>
+                    <p className="truncate text-base font-bold text-[#1f1f1f]">{sheet.name}</p>
+
+                    <p className="mt-1 truncate text-sm text-[#8b8f96]">{sheet.fileName}</p>
                   </div>
-                  <ChevronRight
-                    className="size-5 shrink-0 text-[#9aa0a6]"
-                    aria-hidden
-                  />
+                  <ChevronRight className="size-5 shrink-0 text-[#9aa0a6]" aria-hidden />
                 </Link>
               </li>
             );
           })}
         </ul>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
           {filteredSheets.map((sheet) => {
             const isSelected = sheet.id === selectedId;
 
@@ -169,7 +143,7 @@ export function DatasheetManagement() {
                   href={getDetailHref(sheet.id)}
                   onClick={() => setSelectedId(sheet.id)}
                   className={cn(
-                    'block overflow-hidden rounded-xl bg-white transition-colors',
+                    'block overflow-hidden rounded-lg bg-white transition-colors',
                     isSelected
                       ? 'border border-[#5f6368]'
                       : 'border border-transparent',
@@ -179,15 +153,12 @@ export function DatasheetManagement() {
                     datasheetId={sheet.id}
                     title={sheet.name}
                   />
-                  <div className="space-y-1 px-4 py-3">
-                    <p className="truncate text-sm font-bold text-[#1f1f1f]">
-                      {sheet.code}
-                    </p>
-                    <p className="line-clamp-2 text-sm text-[#1f1f1f]">
+                  <div className="space-y-0.5 px-2 py-2">
+                    <p className="truncate text-xs font-bold text-[#1f1f1f]">
                       {sheet.name}
                     </p>
-                    <p className="truncate text-xs text-[#8b8f96]">
-                      {formatRevision(sheet.revision)} · {sheet.fileName}
+                    <p className="truncate text-[10px] text-[#8b8f96]">
+                      {sheet.fileName}
                     </p>
                   </div>
                 </Link>
@@ -199,9 +170,7 @@ export function DatasheetManagement() {
 
       {filteredSheets.length === 0 && (
         <p className="rounded-xl bg-white px-4 py-8 text-center text-sm text-[#8b8f96]">
-          {query.trim()
-            ? '검색 결과가 없습니다.'
-            : '등록된 데이터시트가 없습니다.'}
+          {query.trim() ? '검색 결과가 없습니다.' : '등록된 데이터시트가 없습니다.'}
         </p>
       )}
     </div>

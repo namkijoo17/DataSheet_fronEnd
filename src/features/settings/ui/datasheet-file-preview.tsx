@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 
 import { fetchDatasheetFileBlob } from '../api/datasheet-api';
@@ -16,18 +17,15 @@ export function DatasheetFilePreview({
 }: DatasheetFilePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>(
-    'idle',
-  );
 
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
 
     const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
           setIsVisible(true);
           observer.disconnect();
         }
@@ -39,40 +37,32 @@ export function DatasheetFilePreview({
     return () => observer.disconnect();
   }, []);
 
+  const { data: blob, isPending, isError } = useQuery({
+    queryKey: ['datasheet-file-preview', datasheetId],
+    queryFn: () => fetchDatasheetFileBlob(datasheetId),
+    enabled: isVisible,
+    staleTime: 5 * 60_000,
+  });
+
+  const previewUrl = useMemo(() => {
+    if (!blob) return null;
+    return URL.createObjectURL(blob);
+  }, [blob]);
+
   useEffect(() => {
-    if (!isVisible) return;
-
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    setStatus('loading');
-
-    fetchDatasheetFileBlob(datasheetId)
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl);
-          return;
-        }
-        setPreviewUrl(objectUrl);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error');
-      });
-
     return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-  }, [datasheetId, isVisible]);
+  }, [previewUrl]);
+
+  const showLoading = !isVisible || isPending || (!previewUrl && !isError);
 
   return (
     <div
       ref={containerRef}
-      className="relative aspect-[3/4] overflow-hidden rounded-t-xl bg-[#eceef1]"
+      className="relative aspect-[3/4] overflow-hidden rounded-t-lg bg-[#eceef1]"
     >
-      {status === 'ready' && previewUrl && (
+      {previewUrl && !isError && (
         <iframe
           title={`${title} 미리보기`}
           src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
@@ -80,22 +70,17 @@ export function DatasheetFilePreview({
         />
       )}
 
-      {(status === 'idle' || status === 'loading') && (
-        <PreviewFallback label="미리보기 준비 중..." />
-      )}
-
-      {status === 'error' && (
-        <PreviewFallback label="미리보기를 불러오지 못했습니다" />
-      )}
+      {showLoading && <PreviewFallback label="준비 중..." />}
+      {isError && <PreviewFallback label="불러오기 실패" />}
     </div>
   );
 }
 
 function PreviewFallback({ label }: { label: string }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-      <FileText className="size-8 text-[#9aa0a6]" aria-hidden />
-      <p className="text-xs text-[#8b8f96]">{label}</p>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-2 text-center">
+      <FileText className="size-5 text-[#9aa0a6]" aria-hidden />
+      <p className="text-[10px] text-[#8b8f96]">{label}</p>
     </div>
   );
 }
