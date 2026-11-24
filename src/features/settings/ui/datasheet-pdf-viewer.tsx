@@ -12,27 +12,67 @@ type DatasheetPdfViewerProps = {
   datasheetId: number;
   selectedLabel?: string | null;
   selectedRegion?: DatasheetPdfRegion | null;
+  editMode?: boolean;
+  canDraw?: boolean;
+  onRegionDrawn?: (region: DatasheetPdfRegion) => void;
+  onDrawBlocked?: () => void;
+};
+
+type ViewerSize = {
+  width: number;
+  height: number;
+};
+
+type DragState = {
+  page: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
 };
 
 export function DatasheetPdfViewer({
   datasheetId,
   selectedLabel,
   selectedRegion,
+  editMode = false,
+  canDraw = false,
+  onRegionDrawn,
+  onDrawBlocked,
 }: DatasheetPdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [pageCount, setPageCount] = useState(0);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [viewerSize, setViewerSize] = useState<ViewerSize>({
+    width: 0,
+    height: 0,
+  });
+  const [drag, setDrag] = useState<DragState | null>(null);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const updateSize = () => {
+      setViewerSize({
+        width: node.clientWidth,
+        height: node.clientHeight,
+      });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     let doc: PDFDocumentProxy | null = null;
 
-    setStatus('loading');
-    setPdfDoc(null);
-    setPageCount(0);
     ensurePdfjsWorker();
 
     fetchDatasheetFileBlob(datasheetId)
@@ -55,7 +95,6 @@ export function DatasheetPdfViewer({
 
     return () => {
       cancelled = true;
-      // pdf.js 6: PDFDocumentProxy.destroy 없음 → cleanup + loadingTask.destroy
       void (async () => {
         try {
           await doc?.cleanup();
@@ -74,34 +113,99 @@ export function DatasheetPdfViewer({
   useEffect(() => {
     if (!selectedRegion) return;
     const pageNode = pageRefs.current.get(selectedRegion.page);
-    pageNode?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    pageNode?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selectedRegion]);
+
+  const draftRegion =
+    drag == null
+      ? null
+      : normalizeDraftRegion(
+          drag.page,
+          drag.startX,
+          drag.startY,
+          drag.currentX,
+          drag.currentY,
+        );
 
   return (
     <div
       ref={containerRef}
-      className="relative h-full min-h-[420px] overflow-auto rounded-2xl border border-[#e8eaed] bg-[#eceef1]"
+      className="relative flex h-full min-h-0 items-center justify-center overflow-hidden rounded-2xl border border-[#e8eaed] bg-[#eceef1] p-2"
     >
       {status === 'loading' && <ViewerFallback label="문서를 불러오는 중..." />}
       {status === 'error' && (
         <ViewerFallback label="문서를 불러오지 못했습니다." />
       )}
 
-      {status === 'ready' && pdfDoc && (
-        <div className="space-y-3 p-3">
+      {status === 'ready' && pdfDoc && viewerSize.width > 0 && (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 overflow-auto">
+          {editMode && (
+            <p className="shrink-0 text-xs text-[#5f6368]">
+              {canDraw
+                ? 'PDF에서 드래그해 좌표 박스를 지정하세요.'
+                : '항목(또는 슬롯)을 선택한 뒤 드래그하세요.'}
+            </p>
+          )}
           {Array.from({ length: pageCount }, (_, index) => {
             const pageNumber = index + 1;
             return (
               <PdfPage
-                key={pageNumber}
+                key={`${datasheetId}-${pageNumber}-${viewerSize.width}x${viewerSize.height}`}
                 pdfDoc={pdfDoc}
                 pageNumber={pageNumber}
+                pageCount={pageCount}
+                viewerSize={viewerSize}
                 selectedLabel={
                   selectedRegion?.page === pageNumber ? selectedLabel : null
                 }
                 selectedRegion={
                   selectedRegion?.page === pageNumber ? selectedRegion : null
                 }
+                draftRegion={
+                  draftRegion?.page === pageNumber ? draftRegion : null
+                }
+                editMode={editMode}
+                onPointerDown={(event, pageNode) => {
+                  if (!editMode) return;
+                  if (!canDraw) {
+                    onDrawBlocked?.();
+                    return;
+                  }
+                  const point = percentPoint(event, pageNode);
+                  setDrag({
+                    page: pageNumber,
+                    startX: point.x,
+                    startY: point.y,
+                    currentX: point.x,
+                    currentY: point.y,
+                  });
+                }}
+                onPointerMove={(event, pageNode) => {
+                  if (!drag || drag.page !== pageNumber) return;
+                  const point = percentPoint(event, pageNode);
+                  setDrag((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          currentX: point.x,
+                          currentY: point.y,
+                        }
+                      : prev,
+                  );
+                }}
+                onPointerUp={() => {
+                  if (!drag || drag.page !== pageNumber) return;
+                  const region = normalizeDraftRegion(
+                    drag.page,
+                    drag.startX,
+                    drag.startY,
+                    drag.currentX,
+                    drag.currentY,
+                  );
+                  setDrag(null);
+                  if (region.width < 0.3 || region.height < 0.3) return;
+                  onRegionDrawn?.(region);
+                }}
                 pageRef={(node) => {
                   if (node) pageRefs.current.set(pageNumber, node);
                   else pageRefs.current.delete(pageNumber);
@@ -115,20 +219,72 @@ export function DatasheetPdfViewer({
   );
 }
 
+function percentPoint(
+  event: React.PointerEvent<HTMLDivElement>,
+  pageNode: HTMLDivElement,
+) {
+  const rect = pageNode.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const y = ((event.clientY - rect.top) / rect.height) * 100;
+  return {
+    x: clamp(x, 0, 100),
+    y: clamp(y, 0, 100),
+  };
+}
+
+function normalizeDraftRegion(
+  page: number,
+  startX: number,
+  startY: number,
+  currentX: number,
+  currentY: number,
+): DatasheetPdfRegion {
+  const x = Math.min(startX, currentX);
+  const y = Math.min(startY, currentY);
+  const width = Math.abs(currentX - startX);
+  const height = Math.abs(currentY - startY);
+  return { page, x, y, width, height };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function PdfPage({
   pdfDoc,
   pageNumber,
+  pageCount,
+  viewerSize,
   selectedLabel,
   selectedRegion,
+  draftRegion,
+  editMode,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
   pageRef,
 }: {
   pdfDoc: PDFDocumentProxy;
   pageNumber: number;
+  pageCount: number;
+  viewerSize: ViewerSize;
   selectedLabel?: string | null;
   selectedRegion: DatasheetPdfRegion | null;
+  draftRegion: DatasheetPdfRegion | null;
+  editMode: boolean;
+  onPointerDown: (
+    event: React.PointerEvent<HTMLDivElement>,
+    pageNode: HTMLDivElement,
+  ) => void;
+  onPointerMove: (
+    event: React.PointerEvent<HTMLDivElement>,
+    pageNode: HTMLDivElement,
+  ) => void;
+  onPointerUp: () => void;
   pageRef: (node: HTMLDivElement | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const localRef = useRef<HTMLDivElement | null>(null);
   const [rendered, setRendered] = useState(false);
 
   useEffect(() => {
@@ -141,19 +297,31 @@ function PdfPage({
       const canvas = canvasRef.current;
       if (!canvas) return;
 
+      const padding = 16;
+      const gap = pageCount > 1 ? 8 * (pageCount - 1) : 0;
+      const availableWidth = Math.max(viewerSize.width - padding, 1);
+      const availableHeight = Math.max(
+        (viewerSize.height - padding - gap) / pageCount,
+        1,
+      );
+
       const baseViewport = page.getViewport({ scale: 1 });
-      const containerWidth =
-        canvas.parentElement?.clientWidth || baseViewport.width;
+      const fitScale = Math.min(
+        availableWidth / baseViewport.width,
+        availableHeight / baseViewport.height,
+      );
+
       const dpr = Math.min(window.devicePixelRatio || 1, 3);
-      const scale = (containerWidth / baseViewport.width) * dpr;
-      const viewport = page.getViewport({ scale });
+      const viewport = page.getViewport({ scale: fitScale * dpr });
+      const displayWidth = viewport.width / dpr;
+      const displayHeight = viewport.height / dpr;
       const context = canvas.getContext('2d');
       if (!context) return;
 
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
-      canvas.style.width = `${containerWidth}px`;
-      canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
       context.clearRect(0, 0, canvas.width, canvas.height);
 
       await page.render({
@@ -164,20 +332,35 @@ function PdfPage({
       if (!cancelled) setRendered(true);
     }
 
-    setRendered(false);
     void renderPage();
 
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumber]);
+  }, [pdfDoc, pageNumber, pageCount, viewerSize.height, viewerSize.width]);
 
   return (
     <div
-      ref={pageRef}
-      className="relative overflow-hidden rounded-xl bg-white shadow-sm"
+      ref={(node) => {
+        localRef.current = node;
+        pageRef(node);
+      }}
+      className={`relative shrink-0 overflow-hidden rounded-xl bg-white shadow-sm ${
+        editMode ? 'cursor-crosshair touch-none' : ''
+      }`}
+      onPointerDown={(event) => {
+        if (!localRef.current) return;
+        localRef.current.setPointerCapture(event.pointerId);
+        onPointerDown(event, localRef.current);
+      }}
+      onPointerMove={(event) => {
+        if (!localRef.current) return;
+        onPointerMove(event, localRef.current);
+      }}
+      onPointerUp={() => onPointerUp()}
+      onPointerCancel={() => onPointerUp()}
     >
-      <canvas ref={canvasRef} className="block w-full" />
+      <canvas ref={canvasRef} className="pointer-events-none block" />
       {rendered && selectedRegion && (
         <div
           className="pointer-events-none absolute rounded-sm border-2 border-[#2563eb] bg-[#2563eb]/15 transition-all duration-300"
@@ -194,6 +377,17 @@ function PdfPage({
             </span>
           )}
         </div>
+      )}
+      {rendered && draftRegion && (
+        <div
+          className="pointer-events-none absolute rounded-sm border-2 border-dashed border-[#16a34a] bg-[#16a34a]/20"
+          style={{
+            left: `${draftRegion.x}%`,
+            top: `${draftRegion.y}%`,
+            width: `${draftRegion.width}%`,
+            height: `${draftRegion.height}%`,
+          }}
+        />
       )}
     </div>
   );

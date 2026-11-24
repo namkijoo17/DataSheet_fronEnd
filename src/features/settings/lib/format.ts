@@ -20,6 +20,10 @@ export function formatRevision(revision: number) {
 
 export function formatItemRange(item: DatasheetItem) {
   if (item.inputType === 'OK_NG') return 'OK / NG';
+  if (item.inputType === 'CHECK') {
+    const count = item.slots?.length ?? item.arraySize ?? 0;
+    return count > 0 ? `체크 ${count}칸` : '체크';
+  }
 
   const min = item.minValue;
   const max = item.maxValue;
