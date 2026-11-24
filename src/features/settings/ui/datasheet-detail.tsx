@@ -11,6 +11,7 @@ import {
   createDatasheetItem,
   deleteDatasheet,
   deleteDatasheetItem,
+  reorderDatasheetItems,
   updateDatasheetItem,
   updateDatasheetItemPosition,
   updateDatasheetSlotPosition,
@@ -55,6 +56,7 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
   const [editMode, setEditMode] = useState(false);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reordering, setReordering] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [rightPanel, setRightPanel] = useState<'list' | 'editor'>('list');
   const [draftRegion, setDraftRegion] = useState<DatasheetPdfRegion | null>(
@@ -248,6 +250,40 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
     }
   };
 
+  const handleMoveItem = async (
+    itemId: number,
+    direction: 'up' | 'down',
+  ) => {
+    const index = items.findIndex((entry) => entry.id === itemId);
+    if (index < 0) return;
+
+    const next = [...items];
+    if (direction === 'up') {
+      if (index === 0) return;
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+    } else {
+      if (index >= next.length - 1) return;
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+    }
+
+    try {
+      setReordering(true);
+      await reorderDatasheetItems(
+        datasheetId,
+        next.map((entry) => entry.id),
+      );
+      await refreshDetail();
+    } catch (err) {
+      window.alert(
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : '순서 변경에 실패했습니다.',
+      );
+    } finally {
+      setReordering(false);
+    }
+  };
+
   const handleDeleteItem = async () => {
     if (!selection) return;
     if (!window.confirm('이 항목을 삭제할까요?')) return;
@@ -386,6 +422,11 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
                 <DatasheetFieldList
                   items={items}
                   selection={selection}
+                  editMode={editMode}
+                  reordering={reordering}
+                  onMove={(itemId, direction) =>
+                    void handleMoveItem(itemId, direction)
+                  }
                   onSelect={(next) => {
                     setCreating(false);
                     setSelection(next);

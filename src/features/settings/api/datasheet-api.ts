@@ -80,6 +80,19 @@ export function deleteDatasheetItem(datasheetId: number, itemId: number) {
   });
 }
 
+export function reorderDatasheetItems(
+  datasheetId: number,
+  itemIds: number[],
+) {
+  return apiClient<DatasheetDetail>(
+    `/api/datasheets/${datasheetId}/items-order`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ itemIds }),
+    },
+  );
+}
+
 export function updateDatasheetItemPosition(
   datasheetId: number,
   itemId: number,
