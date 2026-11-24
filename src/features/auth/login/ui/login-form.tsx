@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CircleAlert } from 'lucide-react';
+import { CircleAlert, Info } from 'lucide-react';
 
 import { useAuthStore } from '@/features/auth/session/auth-store';
+import { consumeLogoutNotice } from '@/features/auth/session/logout-notice';
 import { ApiError } from '@/shared/api/client';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
@@ -22,6 +23,11 @@ export function LoginForm() {
   const setSession = useAuthStore((state) => state.setSession);
   const [isLocked, setIsLocked] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLogoutNotice(consumeLogoutNotice());
+  }, []);
 
   const {
     register,
@@ -60,9 +66,19 @@ export function LoginForm() {
     <div className="flex w-full max-w-[480px] flex-col items-center md:max-w-[520px]">
       <BrandHeader />
 
+      {logoutNotice && (
+        <p
+          role="status"
+          className="mt-8 flex w-full items-start gap-2 rounded-2xl border border-[#d8dce3] bg-[#f5f6f7] px-4 py-3 text-base leading-snug text-[#3c3c3c]"
+        >
+          <Info className="mt-0.5 size-5 shrink-0 text-[#5f6368]" aria-hidden />
+          <span>{logoutNotice}</span>
+        </p>
+      )}
+
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="mt-12 flex w-full flex-col gap-6"
+        className={`${logoutNotice ? 'mt-6' : 'mt-12'} flex w-full flex-col gap-6`}
         noValidate
       >
         <div className="flex flex-col gap-2">

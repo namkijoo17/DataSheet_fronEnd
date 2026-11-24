@@ -9,6 +9,7 @@ import {
 } from '@/shared/api/client';
 
 import { useAuthStore } from './auth-store';
+import { setLogoutNotice } from './logout-notice';
 import {
   ACCESS_REFRESH_MARGIN_MS,
   IDLE_LOGOUT_MS,
@@ -83,6 +84,7 @@ export function AuthSessionManager() {
       } catch {
         // 로컬 세션만 정리
       } finally {
+        setLogoutNotice('idle');
         clearSession();
         router.replace('/login');
       }

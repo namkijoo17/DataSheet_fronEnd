@@ -2,9 +2,9 @@ export type DatasheetInputType =
   | 'NUMBER'
   | 'OK_NG'
   | 'TEXT'
-  | 'ENGLISH'
   | 'MIXED'
-  | 'CHECK';
+  | 'CHECK'
+  | 'CIRCLE';
 
 export type DatasheetSummary = {
   id: number;
@@ -26,6 +26,14 @@ export type DatasheetItemSlot = {
   posY: number;
   posWidth: number | null;
   posHeight: number | null;
+};
+
+export type DatasheetItemRangeRule = {
+  id?: number;
+  dependsOnItemId: number;
+  matchSlotIndex: number;
+  minValue: number | null;
+  maxValue: number | null;
 };
 
 export type DatasheetItem = {
@@ -52,6 +60,7 @@ export type DatasheetItem = {
   array?: boolean;
   arraySize?: number | null;
   slots?: DatasheetItemSlot[];
+  rangeRules?: DatasheetItemRangeRule[];
 };
 
 export type DatasheetDetail = {
@@ -100,6 +109,13 @@ export type DatasheetItemSlotUpsert = {
   posHeight: number | null;
 };
 
+export type DatasheetItemRangeRuleUpsert = {
+  dependsOnItemId: number;
+  matchSlotIndex: number;
+  minValue?: number | null;
+  maxValue?: number | null;
+};
+
 export type DatasheetItemUpsert = {
   groupName?: string | null;
   label: string;
@@ -122,4 +138,5 @@ export type DatasheetItemUpsert = {
   posWidth: number | null;
   posHeight: number | null;
   slots?: DatasheetItemSlotUpsert[];
+  rangeRules?: DatasheetItemRangeRuleUpsert[];
 };

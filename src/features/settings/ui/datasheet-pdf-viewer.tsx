@@ -130,7 +130,7 @@ export function DatasheetPdfViewer({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full min-h-0 items-center justify-center overflow-hidden rounded-2xl border border-[#e8eaed] bg-[#eceef1] p-2"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-[#e8eaed] bg-[#eceef1]"
     >
       {status === 'loading' && <ViewerFallback label="문서를 불러오는 중..." />}
       {status === 'error' && (
@@ -138,14 +138,15 @@ export function DatasheetPdfViewer({
       )}
 
       {status === 'ready' && pdfDoc && viewerSize.width > 0 && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2 overflow-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-2">
           {editMode && (
-            <p className="shrink-0 text-xs text-[#5f6368]">
+            <p className="mb-2 shrink-0 text-center text-xs text-[#5f6368]">
               {canDraw
                 ? 'PDF에서 드래그해 좌표 박스를 지정하세요.'
                 : '항목(또는 슬롯)을 선택한 뒤 드래그하세요.'}
             </p>
           )}
+          <div className="flex w-full flex-col items-center gap-2">
           {Array.from({ length: pageCount }, (_, index) => {
             const pageNumber = index + 1;
             return (
@@ -213,6 +214,7 @@ export function DatasheetPdfViewer({
               />
             );
           })}
+          </div>
         </div>
       )}
     </div>

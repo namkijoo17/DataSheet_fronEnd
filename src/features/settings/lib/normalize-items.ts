@@ -21,7 +21,15 @@ export function normalizeDatasheetItems(items: DatasheetItem[]): DatasheetItem[]
       return true;
     });
 
-    result.push({ ...item, slots });
+    const seenRuleIds = new Set<number>();
+    const rangeRules = (item.rangeRules ?? []).filter((rule) => {
+      if (rule.id == null) return true;
+      if (seenRuleIds.has(rule.id)) return false;
+      seenRuleIds.add(rule.id);
+      return true;
+    });
+
+    result.push({ ...item, slots, rangeRules });
   }
 
   return result;

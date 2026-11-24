@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 
 import { logout } from '@/features/auth/api/auth-api';
 import { useAuthStore } from '@/features/auth/session/auth-store';
+import { setLogoutNotice } from '@/features/auth/session/logout-notice';
 
 export function useLogout() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export function useLogout() {
       } catch {
         // 서버 호출 실패해도 로컬 세션은 정리
       } finally {
+        setLogoutNotice('manual');
         clearSession();
         router.replace('/login');
       }

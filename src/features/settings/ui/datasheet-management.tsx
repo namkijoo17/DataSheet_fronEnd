@@ -2,14 +2,15 @@
 
 import { useDeferredValue, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, LayoutGrid, List } from 'lucide-react';
+import { ChevronRight, LayoutGrid, List, Plus } from 'lucide-react';
 
+import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { cn } from '@/shared/lib/utils';
 
-import { formatRevision } from '../lib/format';
 import type { DatasheetSummary } from '../model/datasheet-types';
 import { useDatasheets } from '../model/use-datasheets';
+import { DatasheetCreateDialog } from './datasheet-create-dialog';
 import { DatasheetFilePreview } from './datasheet-file-preview';
 
 type ViewMode = 'list' | 'card';
@@ -35,6 +36,7 @@ export function DatasheetManagement() {
   const deferredQuery = useDeferredValue(query);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const sheets = data ?? [];
   const filteredSheets = sheets.filter((sheet) => matchesQuery(sheet, deferredQuery));
@@ -73,6 +75,15 @@ export function DatasheetManagement() {
           placeholder="코드 · 이름 · 파일명 검색"
           className="h-12 flex-1 rounded-xl border-[#d8dce3] bg-white px-4 text-base text-[#1f1f1f] placeholder:text-[#9aa0a6]"
         />
+
+        <Button
+          type="button"
+          className="h-12 shrink-0 gap-1.5 rounded-xl px-4"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="size-4" aria-hidden />
+          추가
+        </Button>
 
         <div
           className="inline-flex h-12 shrink-0 items-center rounded-xl border border-[#d8dce3] bg-white p-1"
@@ -173,6 +184,8 @@ export function DatasheetManagement() {
           {query.trim() ? '검색 결과가 없습니다.' : '등록된 데이터시트가 없습니다.'}
         </p>
       )}
+
+      <DatasheetCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }

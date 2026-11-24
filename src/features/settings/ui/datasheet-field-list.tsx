@@ -37,7 +37,7 @@ export function DatasheetFieldList({
           등록된 항목이 없습니다.
         </p>
       ) : (
-        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 py-3">
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain px-3 py-3">
           {items.map((item) => {
             if (hasSlots(item)) {
               return (

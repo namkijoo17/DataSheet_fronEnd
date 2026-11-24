@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 
 import { AppHeader } from './app-header';
@@ -9,13 +10,15 @@ function isDatasheetDetailPath(pathname: string) {
   return /^\/settings\/datasheets\/[^/]+\/?$/.test(pathname);
 }
 
-export function ChromeShell({ children }: { children: React.ReactNode }) {
+function ChromeShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const focusMode = isDatasheetDetailPath(pathname);
 
   if (focusMode) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      <div className="flex h-svh min-h-0 flex-col overflow-hidden">
+        {children}
+      </div>
     );
   }
 
@@ -23,7 +26,21 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
     <>
       <AppHeader />
       <main className="flex-1 px-5 pb-6 pt-6 md:px-6">{children}</main>
-      <BottomNav />
+      <Suspense fallback={null}>
+        <BottomNav />
+      </Suspense>
     </>
+  );
+}
+
+export function ChromeShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex-1 px-5 pb-6 pt-6 md:px-6">{children}</main>
+      }
+    >
+      <ChromeShellInner>{children}</ChromeShellInner>
+    </Suspense>
   );
 }

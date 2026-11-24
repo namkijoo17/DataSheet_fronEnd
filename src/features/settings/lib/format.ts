@@ -24,6 +24,10 @@ export function formatItemRange(item: DatasheetItem) {
     const count = item.slots?.length ?? item.arraySize ?? 0;
     return count > 0 ? `체크 ${count}칸` : '체크';
   }
+  if (item.inputType === 'CIRCLE') {
+    const count = item.slots?.length ?? item.arraySize ?? 0;
+    return count > 0 ? `동그라미 ${count}칸` : '동그라미';
+  }
 
   const min = item.minValue;
   const max = item.maxValue;
@@ -38,8 +42,6 @@ export function formatItemRange(item: DatasheetItem) {
       return `숫자${unit}`;
     case 'TEXT':
       return '텍스트';
-    case 'ENGLISH':
-      return '영문';
     case 'MIXED':
       return '영문/숫자';
     default:

@@ -9,19 +9,23 @@ type DatasheetDetailHeaderProps = {
   title: string;
   subtitle?: string;
   editMode?: boolean;
+  deleting?: boolean;
   onToggleEdit?: () => void;
   onAddItem?: () => void;
+  onDelete?: () => void;
 };
 
 export function DatasheetDetailHeader({
   title,
   subtitle,
   editMode = false,
+  deleting = false,
   onToggleEdit,
   onAddItem,
+  onDelete,
 }: DatasheetDetailHeaderProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-[#e8eaed] bg-white">
+    <header className="z-40 border-b border-[#e8eaed] bg-white">
       <div className="flex h-14 items-center gap-2 px-3 md:h-16 md:gap-3 md:px-4">
         <Link
           href="/settings"
@@ -42,23 +46,43 @@ export function DatasheetDetailHeader({
           )}
         </div>
 
-        {onToggleEdit && (
-          <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {onDelete && (
             <Button
               type="button"
               size="sm"
-              variant={editMode ? 'default' : 'outline'}
-              onClick={onToggleEdit}
+              variant="destructive"
+              onClick={onDelete}
+              disabled={deleting}
             >
-              {editMode ? '편집 종료' : '편집'}
+              {deleting ? '삭제 중...' : '삭제'}
             </Button>
-            {editMode && onAddItem && (
-              <Button type="button" size="sm" variant="outline" onClick={onAddItem}>
-                추가
+          )}
+          {onToggleEdit && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant={editMode ? 'default' : 'outline'}
+                onClick={onToggleEdit}
+                disabled={deleting}
+              >
+                {editMode ? '편집 종료' : '편집'}
               </Button>
-            )}
-          </div>
-        )}
+              {editMode && onAddItem && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onAddItem}
+                  disabled={deleting}
+                >
+                  추가
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

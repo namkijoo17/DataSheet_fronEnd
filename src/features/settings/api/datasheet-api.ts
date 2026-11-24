@@ -1,4 +1,4 @@
-import { apiClient, apiClientBlob } from '@/shared/api/client';
+import { apiClient, apiClientBlob, apiClientFormData } from '@/shared/api/client';
 
 import type {
   DatasheetDetail,
@@ -7,6 +7,13 @@ import type {
   DatasheetPdfPosition,
   DatasheetSummary,
 } from '../model/datasheet-types';
+
+export type CreateDatasheetInput = {
+  name: string;
+  pageWidth?: number | null;
+  pageHeight?: number | null;
+  file: File;
+};
 
 export function fetchDatasheets() {
   return apiClient<DatasheetSummary[]>('/api/datasheets', {
@@ -23,6 +30,26 @@ export function fetchDatasheetDetail(id: number) {
 export function fetchDatasheetFileBlob(id: number) {
   return apiClientBlob(`/api/datasheets/${id}/file`, {
     method: 'GET',
+  });
+}
+
+export function createDatasheet(input: CreateDatasheetInput) {
+  const formData = new FormData();
+  formData.append('name', input.name);
+  if (input.pageWidth != null) {
+    formData.append('pageWidth', String(input.pageWidth));
+  }
+  if (input.pageHeight != null) {
+    formData.append('pageHeight', String(input.pageHeight));
+  }
+  formData.append('file', input.file);
+
+  return apiClientFormData<DatasheetDetail>('/api/datasheets', formData);
+}
+
+export function deleteDatasheet(id: number) {
+  return apiClient<void>(`/api/datasheets/${id}`, {
+    method: 'DELETE',
   });
 }
 

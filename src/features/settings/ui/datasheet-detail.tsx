@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/shared/api/client';
@@ -8,6 +9,7 @@ import { cn } from '@/shared/lib/utils';
 
 import {
   createDatasheetItem,
+  deleteDatasheet,
   deleteDatasheetItem,
   updateDatasheetItem,
   updateDatasheetItemPosition,
@@ -15,16 +17,27 @@ import {
 } from '../api/datasheet-api';
 import { normalizeDatasheetItems } from '../lib/normalize-items';
 import { formatRevision } from '../lib/format';
-import { fromPdfRegion, getItemPdfRegion, getSlotPdfRegion } from '../lib/pdf-region';
+import {
+  fromPdfRegion,
+  getItemPdfRegion,
+  getSlotPdfRegion,
+} from '../lib/pdf-region';
 import type {
   DatasheetFieldSelection,
   DatasheetItemUpsert,
   DatasheetPdfRegion,
 } from '../model/datasheet-types';
-import { datasheetDetailQueryKey, useDatasheetDetail } from '../model/use-datasheet-detail';
+import {
+  datasheetDetailQueryKey,
+  useDatasheetDetail,
+} from '../model/use-datasheet-detail';
+import { datasheetsQueryKey } from '../model/use-datasheets';
 import { DatasheetDetailHeader } from './datasheet-detail-header';
 import { DatasheetFieldList } from './datasheet-field-list';
-import { DatasheetItemEditor } from './datasheet-item-editor';
+import {
+  DatasheetItemEditor,
+  type DatasheetItemEditorHandle,
+} from './datasheet-item-editor';
 import { DatasheetPdfViewer } from './datasheet-pdf-viewer';
 
 type DatasheetDetailProps = {
@@ -32,17 +45,27 @@ type DatasheetDetailProps = {
 };
 
 export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
+  const router = useRouter();
   const queryClient = useQueryClient();
+  const editorRef = useRef<DatasheetItemEditorHandle>(null);
   const { data, isPending, isError, error } = useDatasheetDetail(datasheetId);
-  const [selection, setSelection] = useState<DatasheetFieldSelection | null>(null);
+  const [selection, setSelection] = useState<DatasheetFieldSelection | null>(
+    null,
+  );
   const [editMode, setEditMode] = useState(false);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  /** 편집 모드 우측: 목록 | 속성 (한 칸만 써서 PDF 공간 확보) */
+  const [deleting, setDeleting] = useState(false);
   const [rightPanel, setRightPanel] = useState<'list' | 'editor'>('list');
+  const [draftRegion, setDraftRegion] = useState<DatasheetPdfRegion | null>(
+    null,
+  );
+  const [draftLabel, setDraftLabel] = useState<string | null>(null);
 
-  const items = useMemo(() => (data ? normalizeDatasheetItems(data.items) : []), [data]);
+  const items = useMemo(
+    () => (data ? normalizeDatasheetItems(data.items) : []),
+    [data],
+  );
 
   const selectedItem = useMemo(() => {
     if (!selection) return null;
@@ -50,6 +73,10 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
   }, [items, selection]);
 
   const highlight = useMemo(() => {
+    if (editMode && rightPanel === 'editor' && draftRegion) {
+      return { label: draftLabel, region: draftRegion };
+    }
+
     if (!data || !selection) return null;
 
     if (selection.kind === 'item') {
@@ -69,29 +96,76 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
       label: `${item.label} · ${slot.label}`,
       region: getSlotPdfRegion(slot, data),
     };
-  }, [data, items, selection]);
+  }, [
+    data,
+    items,
+    selection,
+    editMode,
+    rightPanel,
+    draftRegion,
+    draftLabel,
+  ]);
+
+  const handleDraftRegionChange = useCallback(
+    (region: DatasheetPdfRegion | null, label: string | null) => {
+      setDraftRegion(region);
+      setDraftLabel(label);
+    },
+    [],
+  );
 
   const refreshDetail = async () => {
-    await queryClient.invalidateQueries({
+    await queryClient.refetchQueries({
       queryKey: datasheetDetailQueryKey(datasheetId),
     });
   };
 
+  const handleDeleteSheet = async () => {
+    if (
+      !window.confirm(
+        '이 데이터시트와 PDF 파일을 삭제할까요? 항목·좌표도 함께 삭제됩니다.',
+      )
+    ) {
+      return;
+    }
+    try {
+      setDeleting(true);
+      await deleteDatasheet(datasheetId);
+      await queryClient.invalidateQueries({ queryKey: datasheetsQueryKey });
+      router.replace('/settings');
+    } catch (err) {
+      window.alert(
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : '삭제에 실패했습니다.',
+      );
+      setDeleting(false);
+    }
+  };
+
   const handleRegionDrawn = async (region: DatasheetPdfRegion) => {
-    if (!data || !selection) {
-      setNotice('항목(또는 슬롯)을 먼저 선택하세요.');
+    if (!data) return;
+
+    const pageWidth = data.pageWidth && data.pageWidth > 0 ? data.pageWidth : 595.44;
+    const pageHeight =
+      data.pageHeight && data.pageHeight > 0 ? data.pageHeight : 841.92;
+
+    const position = fromPdfRegion(region, pageWidth, pageHeight);
+    if (!position) {
+      window.alert('좌표 변환에 실패했습니다.');
       return;
     }
 
-    const position = fromPdfRegion(region, data.pageWidth, data.pageHeight);
-    if (!position) {
-      setNotice('페이지 크기 정보가 없어 좌표를 저장할 수 없습니다.');
+    // 추가/속성 편집 중이면 API 호출 없이 폼에 반영 후 저장
+    if (editMode && rightPanel === 'editor' && (creating || selectedItem)) {
+      editorRef.current?.applyPosition(position);
       return;
     }
+
+    if (!selection) return;
 
     try {
       setSaving(true);
-      setNotice(null);
       if (selection.kind === 'slot') {
         await updateDatasheetSlotPosition(
           datasheetId,
@@ -100,13 +174,18 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
           position,
         );
       } else {
-        await updateDatasheetItemPosition(datasheetId, selection.itemId, position);
+        await updateDatasheetItemPosition(
+          datasheetId,
+          selection.itemId,
+          position,
+        );
       }
       await refreshDetail();
-      setNotice('좌표를 저장했습니다.');
     } catch (err) {
-      setNotice(
-        err instanceof ApiError || err instanceof Error ? err.message : '좌표 저장에 실패했습니다.',
+      window.alert(
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : '좌표 저장에 실패했습니다.',
       );
     } finally {
       setSaving(false);
@@ -115,12 +194,13 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
 
   const handleSaveItem = async (body: DatasheetItemUpsert) => {
     setSaving(true);
-    setNotice(null);
     try {
       if (creating) {
         const created = await createDatasheetItem(datasheetId, body);
         await refreshDetail();
         setCreating(false);
+        setDraftRegion(null);
+        setDraftLabel(null);
         setSelection(
           created.array && created.slots?.[0]
             ? {
@@ -130,19 +210,27 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
               }
             : { kind: 'item', itemId: created.id },
         );
-        setNotice('항목을 추가했습니다. PDF에서 좌표를 드래그하세요.');
+        setRightPanel('list');
       } else if (selection) {
         const previousSlotIndex =
           selection.kind === 'slot'
-            ? selectedItem?.slots?.find((s) => s.id === selection.slotId)?.slotIndex
+            ? selectedItem?.slots?.find((s) => s.id === selection.slotId)
+                ?.slotIndex
             : null;
-        const updated = await updateDatasheetItem(datasheetId, selection.itemId, body);
+        const updated = await updateDatasheetItem(
+          datasheetId,
+          selection.itemId,
+          body,
+        );
         await refreshDetail();
+        setDraftRegion(null);
+        setDraftLabel(null);
         if (updated.array && updated.slots && updated.slots.length > 0) {
           const matched =
             previousSlotIndex == null
               ? updated.slots[0]
-              : (updated.slots.find((s) => s.slotIndex === previousSlotIndex) ?? updated.slots[0]);
+              : (updated.slots.find((s) => s.slotIndex === previousSlotIndex) ??
+                updated.slots[0]);
           setSelection({
             kind: 'slot',
             itemId: updated.id,
@@ -151,8 +239,10 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
         } else {
           setSelection({ kind: 'item', itemId: updated.id });
         }
-        setNotice('항목을 저장했습니다.');
+        setRightPanel('list');
       }
+    } catch (err) {
+      throw err instanceof Error ? err : new Error('저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
@@ -162,15 +252,17 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
     if (!selection) return;
     if (!window.confirm('이 항목을 삭제할까요?')) return;
     setSaving(true);
-    setNotice(null);
     try {
       await deleteDatasheetItem(datasheetId, selection.itemId);
       await refreshDetail();
       setSelection(null);
       setCreating(false);
-      setNotice('항목을 삭제했습니다.');
+      setDraftRegion(null);
+      setDraftLabel(null);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : '삭제에 실패했습니다.');
+      window.alert(
+        err instanceof Error ? err.message : '삭제에 실패했습니다.',
+      );
     } finally {
       setSaving(false);
     }
@@ -200,49 +292,53 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
     );
   }
 
+  const editorOpen = editMode && rightPanel === 'editor';
+  const canDrawOnPdf =
+    editMode &&
+    (editorOpen
+      ? creating || Boolean(selectedItem)
+      : Boolean(selection));
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <DatasheetDetailHeader
-        title={data.name}
-        subtitle={`${data.code} · ${formatRevision(data.revision)} · 항목 ${items.length}개`}
-        editMode={editMode}
-        onToggleEdit={() => {
-          setEditMode((prev) => !prev);
-          setCreating(false);
-          setRightPanel('list');
-          setNotice(null);
-        }}
-        onAddItem={() => {
-          setCreating(true);
-          setSelection(null);
-          setRightPanel('editor');
-          setNotice(null);
-        }}
-      />
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="shrink-0">
+        <DatasheetDetailHeader
+          title={data.name}
+          subtitle={`${data.code} · ${formatRevision(data.revision)} · 항목 ${items.length}개`}
+          editMode={editMode}
+          deleting={deleting}
+          onDelete={() => void handleDeleteSheet()}
+          onToggleEdit={() => {
+            setEditMode((prev) => !prev);
+            setCreating(false);
+            setRightPanel('list');
+            setDraftRegion(null);
+            setDraftLabel(null);
+          }}
+          onAddItem={() => {
+            setCreating(true);
+            setSelection(null);
+            setRightPanel('editor');
+            setDraftRegion(null);
+            setDraftLabel(null);
+          }}
+        />
+      </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3 md:px-5 md:py-4">
-        {notice && (
-          <p className="shrink-0 rounded-xl bg-[#f5f6f7] px-3 py-2 text-sm text-[#5f6368]">
-            {notice}
-          </p>
-        )}
-
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] md:items-stretch">
-          <div className="h-[42svh] min-h-0 md:h-auto">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 md:px-5 md:py-4">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+          <div className="min-h-0 overflow-hidden max-md:h-[42svh] md:h-full">
             <DatasheetPdfViewer
               datasheetId={data.id}
               selectedLabel={highlight?.label}
               selectedRegion={highlight?.region ?? null}
-              editMode={editMode && !creating}
-              canDraw={editMode && Boolean(selection) && !creating}
+              editMode={editMode}
+              canDraw={canDrawOnPdf}
               onRegionDrawn={(region) => void handleRegionDrawn(region)}
-              onDrawBlocked={() =>
-                setNotice('항목(또는 슬롯)을 먼저 선택하세요.')
-              }
             />
           </div>
 
-          <div className="flex h-[42svh] min-h-0 flex-col md:h-auto">
+          <div className="flex min-h-0 flex-col overflow-hidden max-md:h-[42svh] md:h-full">
             {editMode && (
               <div
                 className="mb-2 flex shrink-0 rounded-xl border border-[#d8dce3] bg-white p-1"
@@ -256,6 +352,8 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
                   onClick={() => {
                     setRightPanel('list');
                     setCreating(false);
+                    setDraftRegion(null);
+                    setDraftLabel(null);
                   }}
                   className={cn(
                     'h-9 flex-1 rounded-lg text-sm font-semibold transition-colors',
@@ -283,7 +381,7 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
               </div>
             )}
 
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 overflow-hidden">
               {!editMode || rightPanel === 'list' ? (
                 <DatasheetFieldList
                   items={items}
@@ -291,16 +389,24 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
                   onSelect={(next) => {
                     setCreating(false);
                     setSelection(next);
-                    setNotice(null);
+                    setDraftRegion(null);
+                    setDraftLabel(null);
                   }}
                 />
               ) : (
                 <DatasheetItemEditor
+                  ref={editorRef}
                   item={creating ? null : selectedItem}
+                  siblingItems={items}
                   creating={creating}
                   saving={saving}
+                  pageWidth={data.pageWidth}
+                  pageHeight={data.pageHeight}
+                  onDraftRegionChange={handleDraftRegionChange}
                   onCancelCreate={() => {
                     setCreating(false);
+                    setDraftRegion(null);
+                    setDraftLabel(null);
                     setRightPanel('list');
                   }}
                   onSave={handleSaveItem}

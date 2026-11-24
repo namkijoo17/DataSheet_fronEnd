@@ -4,6 +4,8 @@ export {
   fetchDatasheets,
   fetchDatasheetDetail,
   fetchDatasheetFileBlob,
+  createDatasheet,
+  deleteDatasheet,
   createDatasheetItem,
   updateDatasheetItem,
   deleteDatasheetItem,
@@ -20,7 +22,9 @@ export type {
   DatasheetDetail as DatasheetDetailType,
   DatasheetItem,
   DatasheetItemSlot,
+  DatasheetItemRangeRule,
   DatasheetFieldSelection,
   DatasheetInputType,
   DatasheetPdfRegion,
 } from './model/datasheet-types';
+export { resolveItemRange } from './lib/resolve-range';
