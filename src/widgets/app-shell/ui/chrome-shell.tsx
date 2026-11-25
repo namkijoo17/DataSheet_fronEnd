@@ -10,9 +10,15 @@ function isDatasheetDetailPath(pathname: string) {
   return /^\/settings\/datasheets\/[^/]+\/?$/.test(pathname);
 }
 
+function isInspectionModeFocusPath(pathname: string) {
+  // 검사 시작 플로우 중 모드 선택 화면은 자체 헤더/하단 버튼을 씀
+  return pathname === '/inspections/new' || pathname.startsWith('/inspections/new/');
+}
+
 function ChromeShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const focusMode = isDatasheetDetailPath(pathname);
+  const focusMode =
+    isDatasheetDetailPath(pathname) || isInspectionModeFocusPath(pathname);
 
   if (focusMode) {
     return (

@@ -1,5 +1,6 @@
 export { SettingsTabs } from './ui/settings-tabs';
 export { DatasheetDetail } from './ui/datasheet-detail';
+export { DatasheetFilePreview } from './ui/datasheet-file-preview';
 export {
   fetchDatasheets,
   fetchDatasheetDetail,
@@ -12,6 +13,7 @@ export {
   updateDatasheetItemPosition,
   updateDatasheetSlotPosition,
 } from './api/datasheet-api';
+export { normalizeDatasheetItems } from './lib/normalize-items';
 export { useDatasheets, datasheetsQueryKey } from './model/use-datasheets';
 export {
   useDatasheetDetail,
@@ -28,3 +30,10 @@ export type {
   DatasheetPdfRegion,
 } from './model/datasheet-types';
 export { resolveItemRange } from './lib/resolve-range';
+export {
+  toPdfRegion,
+  fromPdfRegion,
+  getItemPdfRegion,
+  getSlotPdfRegion,
+} from './lib/pdf-region';
+export { formatRevision, formatItemRange } from './lib/format';

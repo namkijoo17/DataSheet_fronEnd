@@ -1,0 +1,132 @@
+import type { DatasheetItem } from '@/features/settings';
+import { resolveItemRange } from '@/features/settings';
+
+import type { InspectionModeId } from '../model/inspection-modes';
+
+export type InspectionAnswer = {
+  skipped?: boolean;
+  /** 단일 값 (TEXT/NUMBER/MIXED) */
+  value?: string;
+  /** OK_NG / CHECK / CIRCLE 단일 선택 슬롯 */
+  slotIndex?: number | null;
+  /** 배열 슬롯별 값 */
+  slotValues?: Record<number, string>;
+  /** 수동/자동 판정 */
+  judgment?: 'OK' | 'NG' | null;
+};
+
+export type InspectionAnswers = Record<number, InspectionAnswer>;
+
+export function emptyAnswer(): InspectionAnswer {
+  return {};
+}
+
+export function isItemAnswered(
+  item: DatasheetItem,
+  answer: InspectionAnswer | undefined,
+  mode: InspectionModeId,
+): boolean {
+  if (mode === 'PARTS_SHIPPING' && item.skippable && answer?.skipped) {
+    return true;
+  }
+  if (!answer || answer.skipped) return false;
+
+  if (
+    item.inputType === 'OK_NG' ||
+    item.inputType === 'CHECK' ||
+    item.inputType === 'CIRCLE'
+  ) {
+    // 하단 OK/NG 또는 슬롯 선택 중 하나만 있어도 입력 완료
+    if (answer.judgment === 'OK' || answer.judgment === 'NG') return true;
+    return answer.slotIndex != null;
+  }
+
+  if (item.inputType === 'NUMBER') {
+    return Boolean(answer.value?.trim());
+  }
+
+  if (item.array && (item.slots?.length ?? 0) > 0) {
+    const filledSlots = (item.slots ?? []).some((slot) =>
+      Boolean(answer.slotValues?.[slot.slotIndex]?.trim()),
+    );
+    if (filledSlots) return true;
+    return answer.judgment === 'OK' || answer.judgment === 'NG';
+  }
+
+  if (answer.value?.trim()) return true;
+  return answer.judgment === 'OK' || answer.judgment === 'NG';
+}
+
+export function isInspectionComplete(
+  items: DatasheetItem[],
+  answers: InspectionAnswers,
+  mode: InspectionModeId,
+) {
+  return items.every((item) => {
+    if (!item.required) {
+      const answer = answers[item.id];
+      if (!answer) return true;
+      return isItemAnswered(item, answer, mode);
+    }
+    return isItemAnswered(item, answers[item.id], mode);
+  });
+}
+
+export function judgeNumberDetail(
+  item: DatasheetItem,
+  raw: string,
+  unitSlotIndex: number | null,
+) {
+  const { minValue, maxValue } = resolveItemRange(item, unitSlotIndex);
+  if (!raw.trim()) {
+    return {
+      result: 'EMPTY' as const,
+      value: null as number | null,
+      minValue,
+      maxValue,
+      deltaFromMin: null as number | null,
+    };
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    return {
+      result: 'NG' as const,
+      value: null,
+      minValue,
+      maxValue,
+      deltaFromMin: null,
+    };
+  }
+  let result: 'OK' | 'NG' = 'OK';
+  if (minValue != null && n < minValue) result = 'NG';
+  if (maxValue != null && n > maxValue) result = 'NG';
+  return {
+    result,
+    value: n,
+    minValue,
+    maxValue,
+    deltaFromMin: minValue != null ? n - minValue : null,
+  };
+}
+
+export function judgeNumber(
+  item: DatasheetItem,
+  raw: string,
+  unitSlotIndex: number | null,
+): 'OK' | 'NG' | 'EMPTY' {
+  return judgeNumberDetail(item, raw, unitSlotIndex).result;
+}
+
+export function formatRangeHint(
+  item: DatasheetItem,
+  unitSlotIndex: number | null,
+) {
+  const { minValue, maxValue } = resolveItemRange(item, unitSlotIndex);
+  const unit = item.unit ? ` ${item.unit}` : '';
+  if (minValue != null && maxValue != null) {
+    return `${minValue} ~ ${maxValue}${unit}`;
+  }
+  if (minValue != null) return `${minValue} 이상${unit}`;
+  if (maxValue != null) return `${maxValue} 이하${unit}`;
+  return unit.trim() || null;
+}

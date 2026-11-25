@@ -12,7 +12,7 @@ export function StartInspectionCta() {
           신규 검사 시작
         </p>
         <p className="mt-1 text-sm text-white/75 md:text-base">
-          바코드 스캔 또는 기번 입력
+          데이터시트 선택 후 기번 입력
         </p>
       </div>
       <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-white text-[#1f1f1f] md:size-14">

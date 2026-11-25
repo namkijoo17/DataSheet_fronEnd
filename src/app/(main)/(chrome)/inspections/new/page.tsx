@@ -1,3 +1,5 @@
+import { CreateInspectionFlow } from '@/features/inspection/create-inspection';
+
 export default function NewInspectionPage() {
-  return <div>New Inspection</div>;
+  return <CreateInspectionFlow />;
 }
