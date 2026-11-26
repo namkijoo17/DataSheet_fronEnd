@@ -6,11 +6,7 @@ import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 import { Input } from '@/shared/ui/input';
 import { cn } from '@/shared/lib/utils';
-import {
-  formatRevision,
-  useDatasheets,
-  type DatasheetSummary,
-} from '@/features/settings';
+import { formatRevision, useDatasheets, type DatasheetSummary } from '@/features/settings';
 
 type DatasheetPickerProps = {
   onSelect: (sheet: DatasheetSummary) => void;
@@ -21,7 +17,6 @@ function matchesQuery(sheet: DatasheetSummary, query: string) {
   if (!normalized) return true;
 
   return (
-    sheet.code.toLowerCase().includes(normalized) ||
     sheet.name.toLowerCase().includes(normalized) ||
     sheet.fileName.toLowerCase().includes(normalized)
   );
@@ -32,9 +27,7 @@ export function DatasheetPicker({ onSelect }: DatasheetPickerProps) {
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
 
-  const sheets = (data ?? []).filter((sheet) =>
-    matchesQuery(sheet, deferredQuery),
-  );
+  const sheets = (data ?? []).filter((sheet) => matchesQuery(sheet, deferredQuery));
 
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[#f4f6f8]">
@@ -50,9 +43,7 @@ export function DatasheetPicker({ onSelect }: DatasheetPickerProps) {
       </header>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        <p className="text-sm text-[#8b8f96]">
-          검사를 진행할 등록된 데이터시트를 선택하세요.
-        </p>
+        <p className="text-sm text-[#8b8f96]">검사를 진행할 등록된 데이터시트를 선택하세요.</p>
 
         <Input
           value={query}
@@ -70,9 +61,7 @@ export function DatasheetPicker({ onSelect }: DatasheetPickerProps) {
         {isError && (
           <div className="space-y-3 rounded-xl bg-white px-4 py-8 text-center">
             <p className="text-sm text-[#8b8f96]">
-              {error instanceof Error
-                ? error.message
-                : '데이터시트 목록을 불러오지 못했습니다.'}
+              {error instanceof Error ? error.message : '데이터시트 목록을 불러오지 못했습니다.'}
             </p>
             <button
               type="button"
@@ -112,13 +101,10 @@ export function DatasheetPicker({ onSelect }: DatasheetPickerProps) {
                       {sheet.name}
                     </span>
                     <span className="mt-1 block truncate text-sm text-[#8b8f96]">
-                      {sheet.code} · {formatRevision(sheet.revision)}
+                      {sheet.fileName}
                     </span>
                   </span>
-                  <ChevronRight
-                    className="size-5 shrink-0 text-[#9aa0a6]"
-                    aria-hidden
-                  />
+                  <ChevronRight className="size-5 shrink-0 text-[#9aa0a6]" aria-hidden />
                 </button>
               </li>
             ))}

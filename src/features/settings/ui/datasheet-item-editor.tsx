@@ -85,6 +85,7 @@ type FormState = {
   allowNegative: boolean;
   required: boolean;
   skippable: boolean;
+  specDescription: string;
   pdfPage: number;
   posX: number;
   posY: number;
@@ -111,6 +112,7 @@ function emptyForm(): FormState {
     allowNegative: false,
     required: true,
     skippable: false,
+    specDescription: '',
     pdfPage: 1,
     posX: 40,
     posY: 780,
@@ -181,6 +183,7 @@ function fromItem(item: DatasheetItem, siblings: DatasheetItem[]): FormState {
     allowNegative: item.allowNegative,
     required: item.required,
     skippable: item.skippable,
+    specDescription: item.specDescription ?? '',
     pdfPage: item.pdfPage,
     posX: item.posX,
     posY: item.posY,
@@ -445,6 +448,7 @@ export const DatasheetItemEditor = forwardRef<
       allowNegative: form.allowNegative,
       required: form.required,
       skippable: form.skippable,
+      specDescription: form.specDescription.trim() || null,
       pdfPage: form.pdfPage,
       posX: form.posX,
       posY: form.posY,
@@ -481,6 +485,13 @@ export const DatasheetItemEditor = forwardRef<
             value={form.label}
             onChange={(e) => update('label', e.target.value)}
             placeholder="예: 기번"
+          />
+        </Field>
+        <Field label="규격설명">
+          <Input
+            value={form.specDescription}
+            onChange={(e) => update('specDescription', e.target.value)}
+            placeholder="예: 본문 4항 참조"
           />
         </Field>
         <Field label="그룹">

@@ -28,6 +28,8 @@ type InspectionCompleteConfirmProps = {
   answers: InspectionAnswers;
   onBack: () => void;
   onConfirm: () => void;
+  /** 저장 요청 진행 중 */
+  confirming?: boolean;
 };
 
 export function InspectionCompleteConfirm({
@@ -37,23 +39,16 @@ export function InspectionCompleteConfirm({
   answers,
   onBack,
   onConfirm,
+  confirming = false,
 }: InspectionCompleteConfirmProps) {
-  const { data, isPending, isError, error, refetch } = useDatasheetDetail(
-    datasheet.id,
-  );
+  const { data, isPending, isError, error, refetch } = useDatasheetDetail(datasheet.id);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [pageCount, setPageCount] = useState(1);
 
-  const items = useMemo(
-    () => normalizeDatasheetItems(data?.items ?? []),
-    [data],
-  );
+  const items = useMemo(() => normalizeDatasheetItems(data?.items ?? []), [data]);
 
-  const unitSlotIndex = useMemo(
-    () => resolveUnitSlotIndex(items, basic.unit),
-    [items, basic.unit],
-  );
+  const unitSlotIndex = useMemo(() => resolveUnitSlotIndex(items, basic.unit), [items, basic.unit]);
 
   const overlays = useMemo(() => {
     if (!data) return [];
@@ -79,9 +74,7 @@ export function InspectionCompleteConfirm({
   const summary = useMemo(() => summarizeResults(rows), [rows]);
   const statusOk = summary.ng === 0;
   const highlighted = rows.filter((row) => row.highlightNg);
-  const numberRows = rows.filter(
-    (row) => row.measured != null && row.judgment !== 'SKIP',
-  );
+  const numberRows = rows.filter((row) => row.measured != null && row.judgment !== 'SKIP');
   const previewRows = showAll
     ? rows
     : [...highlighted, ...numberRows.filter((r) => !r.highlightNg)].slice(
@@ -102,11 +95,7 @@ export function InspectionCompleteConfirm({
   if (isError || !data) {
     return (
       <Center
-        text={
-          error instanceof Error
-            ? error.message
-            : '결과를 불러오지 못했습니다.'
-        }
+        text={error instanceof Error ? error.message : '결과를 불러오지 못했습니다.'}
         onBack={onBack}
         actionLabel="다시 시도"
         onAction={() => void refetch()}
@@ -128,15 +117,11 @@ export function InspectionCompleteConfirm({
           >
             <ChevronLeft className="size-5" />
           </button>
-          <h1 className="flex-1 text-lg font-bold text-[#1f1f1f]">
-            검사 완료 확인
-          </h1>
+          <h1 className="flex-1 text-lg font-bold text-[#1f1f1f]">검사 완료 확인</h1>
           <span
             className={cn(
               'rounded-full px-2.5 py-1 text-xs font-bold',
-              statusOk
-                ? 'bg-[#ecfdf3] text-[#166534]'
-                : 'bg-[#fef2f2] text-[#b91c1c]',
+              statusOk ? 'bg-[#ecfdf3] text-[#166534]' : 'bg-[#fef2f2] text-[#b91c1c]',
             )}
           >
             {statusOk ? '정상 완료' : 'NG 포함'}
@@ -152,13 +137,13 @@ export function InspectionCompleteConfirm({
         </section>
 
         <section className="rounded-2xl bg-white px-4 py-3 text-sm text-[#5f6368]">
-          <p className="font-semibold text-[#1f1f1f]">
-            {basic.serialNo || '-'}
-            {basic.unit ? ` | ${basic.unit}` : ''}
-          </p>
+          <p className="font-semibold text-[#1f1f1f]">{datasheet.fileName}</p>
           <p className="mt-1">
             검사자 {basic.inspector || '-'} · {basic.inspectDate || '-'}
           </p>
+          {basic.inspectorChangeReason.trim() && (
+            <p className="mt-1 break-words">검사자 변경 사유: {basic.inspectorChangeReason}</p>
+          )}
           <p className="mt-1">
             전체 {summary.total} / 완료 {summary.done}
           </p>
@@ -190,20 +175,19 @@ export function InspectionCompleteConfirm({
                 {(showAll ? rows : previewRows).map((row) => (
                   <tr
                     key={row.itemId}
-                    className={cn(
-                      'border-t border-[#f0f2f4]',
-                      row.highlightNg && 'bg-[#fef2f2]',
-                    )}
+                    className={cn('border-t border-[#f0f2f4]', row.highlightNg && 'bg-[#fef2f2]')}
                   >
-                    <td className="px-3 py-2.5 font-semibold text-[#1f1f1f]">
-                      {row.label}
+                    <td className="px-3 py-2.5 font-semibold text-[#1f1f1f]">{row.label}</td>
+                    <td className="max-w-[12rem] px-3 py-2.5 text-[#5f6368]">
+                      {row.standard ? (
+                        <span className="whitespace-pre-wrap break-words">
+                          {row.standard}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
                     </td>
-                    <td className="px-3 py-2.5 text-[#5f6368]">
-                      {row.standard ?? '-'}
-                    </td>
-                    <td className="px-3 py-2.5 text-[#1f1f1f]">
-                      {row.measured ?? '-'}
-                    </td>
+                    <td className="px-3 py-2.5 text-[#1f1f1f]">{row.measured ?? '-'}</td>
                     <td
                       className={cn(
                         'px-3 py-2.5 font-semibold',
@@ -240,8 +224,7 @@ export function InspectionCompleteConfirm({
             <div>
               <h2 className="text-sm font-bold text-[#1f1f1f]">PDF 미리보기</h2>
               <p className="mt-1 text-xs leading-relaxed text-[#8b8f96]">
-                입력값을 좌표에 반영한 미리보기입니다. 동그라미·체크·측정값이
-                파란색으로 표시됩니다.
+                입력값을 좌표에 반영한 미리보기입니다. 동그라미·체크·측정값이 파란색으로 표시됩니다.
               </p>
             </div>
             <button
@@ -253,31 +236,34 @@ export function InspectionCompleteConfirm({
             </button>
           </div>
 
-          <div
-            className={cn(
-              'mt-3 grid gap-3',
-              pageCount > 1 ? 'grid-cols-2' : 'grid-cols-1',
-            )}
-          >
+          <div className={cn('mt-3 grid gap-3', pageCount > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
             {Array.from({ length: Math.max(Math.min(pageCount, 2), 1) }, (_, index) => (
-              <button
+              <div
                 key={index}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setPreviewOpen(true)}
-                className="overflow-hidden rounded-xl border border-[#e8eaed] text-left"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setPreviewOpen(true);
+                  }
+                }}
+                className="cursor-pointer overflow-hidden rounded-xl border border-[#e8eaed] text-left"
               >
-                <InspectionFilledPdfViewer
-                  datasheetId={datasheet.id}
-                  overlays={overlays}
-                  fixedPage={index + 1}
-                  compact
-                  onReadyPages={index === 0 ? setPageCount : undefined}
-                />
+                <div className="pointer-events-none">
+                  <InspectionFilledPdfViewer
+                    datasheetId={datasheet.id}
+                    overlays={overlays}
+                    fixedPage={index + 1}
+                    compact
+                    onReadyPages={index === 0 ? setPageCount : undefined}
+                  />
+                </div>
                 <p className="truncate bg-[#fafbfc] px-2 py-1.5 text-[11px] font-semibold text-[#5f6368]">
-                  {basic.serialNo || datasheet.code} · {index + 1}/
-                  {Math.max(pageCount, 1)}
+                  {basic.serialNo || datasheet.name} · {index + 1}/{Math.max(pageCount, 1)}
                 </p>
-              </button>
+              </div>
             ))}
           </div>
         </section>
@@ -290,16 +276,18 @@ export function InspectionCompleteConfirm({
           <button
             type="button"
             onClick={onBack}
-            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f]"
+            disabled={confirming}
+            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f] disabled:opacity-40"
           >
             항목 검토
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="h-12 rounded-xl bg-[#3c3c3c] text-sm font-bold text-white"
+            disabled={confirming}
+            className="h-12 rounded-xl bg-[#3c3c3c] text-sm font-bold text-white disabled:opacity-60"
           >
-            완료 확정 및 저장
+            {confirming ? '저장 중...' : '완료 확정 및 저장'}
           </button>
         </div>
       </div>
@@ -318,6 +306,7 @@ export function InspectionCompleteConfirm({
           </div>
           <div className="min-h-0 flex-1 overflow-auto p-3">
             <InspectionFilledPdfViewer
+              key={`preview-${datasheet.id}`}
               datasheetId={datasheet.id}
               overlays={overlays}
             />
@@ -376,11 +365,7 @@ function Center({
       <div className="flex flex-1 flex-col items-center justify-center gap-3">
         <p className="text-sm text-[#8b8f96]">{text}</p>
         {actionLabel && onAction && (
-          <button
-            type="button"
-            onClick={onAction}
-            className="text-sm font-semibold underline"
-          >
+          <button type="button" onClick={onAction} className="text-sm font-semibold underline">
             {actionLabel}
           </button>
         )}

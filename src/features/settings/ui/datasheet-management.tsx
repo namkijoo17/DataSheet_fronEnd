@@ -20,7 +20,6 @@ function matchesQuery(sheet: DatasheetSummary, query: string) {
   if (!normalized) return true;
 
   return (
-    sheet.code.toLowerCase().includes(normalized) ||
     sheet.name.toLowerCase().includes(normalized) ||
     sheet.fileName.toLowerCase().includes(normalized)
   );

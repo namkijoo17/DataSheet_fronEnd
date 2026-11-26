@@ -24,6 +24,8 @@ type InspectionModeSelectProps = {
   datasheetLabel: string;
   metaLabel?: string;
   actionLabel?: string;
+  /** 처음 선택돼 있을 모드 (이미 시작한 검사로 돌아온 경우) */
+  initialMode?: InspectionModeId;
   onBack: () => void;
   onStart: (mode: InspectionModeId) => void;
 };
@@ -47,12 +49,13 @@ export function InspectionModeSelect({
   datasheetLabel,
   metaLabel,
   actionLabel,
+  initialMode = 'BASIC',
   onBack,
   onStart,
 }: InspectionModeSelectProps) {
   const { data, isPending, isError, error, refetch, isFetching } =
     useDatasheetDetail(datasheetId);
-  const [mode, setMode] = useState<InspectionModeId>('BASIC');
+  const [mode, setMode] = useState<InspectionModeId>(initialMode);
 
   const items = useMemo(
     () => normalizeDatasheetItems(data?.items ?? []),

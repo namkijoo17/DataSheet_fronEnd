@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 
@@ -31,9 +32,12 @@ export function InspectionFilledPdfViewer({
   onReadyPages,
 }: InspectionFilledPdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [pageCount, setPageCount] = useState(0);
+  const onReadyPagesRef = useRef(onReadyPages);
+  onReadyPagesRef.current = onReadyPages;
+
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [docError, setDocError] = useState(false);
+  const [pageCount, setPageCount] = useState(0);
   const [viewerSize, setViewerSize] = useState<ViewerSize>({
     width: 0,
     height: 0,
@@ -43,29 +47,66 @@ export function InspectionFilledPdfViewer({
 
   const activePage = fixedPage ?? page;
 
+  const {
+    data: blob,
+    isPending: blobPending,
+    isError: blobError,
+  } = useQuery({
+    queryKey: ['datasheet-file-blob', datasheetId],
+    queryFn: () => fetchDatasheetFileBlob(datasheetId),
+    staleTime: 5 * 60_000,
+  });
+
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
-    const updateSize = () => {
-      setViewerSize({ width: node.clientWidth, height: node.clientHeight });
+
+    const measure = () => {
+      const width = Math.max(
+        node.clientWidth,
+        node.getBoundingClientRect().width,
+        compact ? 0 : Math.min(window.innerWidth - 24, 960),
+      );
+      const height = Math.max(
+        node.clientHeight,
+        node.getBoundingClientRect().height,
+        compact ? 0 : Math.round(window.innerHeight * 0.6),
+      );
+      setViewerSize((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height },
+      );
     };
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
+
+    measure();
+    const raf = requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
     observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+    window.addEventListener('resize', measure);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [compact]);
 
   useEffect(() => {
+    if (!blob) return;
+
     let cancelled = false;
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     let doc: PDFDocumentProxy | null = null;
 
+    setDocError(false);
+    setPdfDoc(null);
     ensurePdfjsWorker();
-    setStatus('loading');
 
-    fetchDatasheetFileBlob(datasheetId)
-      .then(async (blob) => {
+    void (async () => {
+      try {
         const data = await blob.arrayBuffer();
+        if (cancelled) return;
         loadingTask = getDocument({ data });
         doc = await loadingTask.promise;
         if (cancelled) {
@@ -75,13 +116,12 @@ export function InspectionFilledPdfViewer({
         }
         setPdfDoc(doc);
         setPageCount(doc.numPages);
-        setPage(1);
-        onReadyPages?.(doc.numPages);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error');
-      });
+        if (fixedPage == null) setPage(1);
+        onReadyPagesRef.current?.(doc.numPages);
+      } catch {
+        if (!cancelled) setDocError(true);
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -98,9 +138,15 @@ export function InspectionFilledPdfViewer({
         }
       })();
     };
-  }, [datasheetId, onReadyPages]);
+  }, [blob, fixedPage]);
 
   const pageOverlays = overlays.filter((mark) => mark.page === activePage);
+  const loading = blobPending || (!!blob && !pdfDoc && !docError);
+  const error = blobError || docError;
+  const renderWidth = Math.max(
+    viewerSize.width || (compact ? 280 : window.innerWidth - 48),
+    120,
+  );
 
   return (
     <div className={className}>
@@ -112,9 +158,9 @@ export function InspectionFilledPdfViewer({
             : 'relative min-h-[60svh] w-full overflow-auto rounded-xl bg-[#eceef1]'
         }
       >
-        {status === 'loading' && <Fallback label="PDF 불러오는 중..." />}
-        {status === 'error' && <Fallback label="PDF를 불러오지 못했습니다." />}
-        {status === 'ready' && pdfDoc && viewerSize.width > 0 && (
+        {loading && <Fallback label="PDF 불러오는 중..." />}
+        {error && <Fallback label="PDF를 불러오지 못했습니다." />}
+        {!loading && !error && pdfDoc && (
           <div
             className={
               compact
@@ -132,11 +178,15 @@ export function InspectionFilledPdfViewer({
               pageNumber={activePage}
               viewerWidth={
                 compact
-                  ? Math.max(viewerSize.width - 8, 1)
-                  : Math.max(viewerSize.width - 24, 1)
+                  ? Math.max(renderWidth - 8, 1)
+                  : Math.max(renderWidth - 24, 1)
               }
               overlays={pageOverlays}
-              fitHeight={compact ? Math.max(viewerSize.height - 8, 1) : null}
+              fitHeight={
+                compact
+                  ? Math.max(viewerSize.height || renderWidth * 1.35, 1) - 8
+                  : null
+              }
             />
           </div>
         )}
@@ -166,14 +216,14 @@ export function InspectionFilledPdfViewer({
             </button>
             <button
               type="button"
-              onClick={() => setScale((s) => Math.max(0.6, s - 0.1))}
+              onClick={() => setScale((s) => Math.max(0.6, Number((s - 0.1).toFixed(1))))}
               className="rounded-lg border border-[#d8dce3] px-2.5 py-1.5 text-sm font-semibold"
             >
               −
             </button>
             <button
               type="button"
-              onClick={() => setScale((s) => Math.min(2, s + 0.1))}
+              onClick={() => setScale((s) => Math.min(2, Number((s + 0.1).toFixed(1))))}
               className="rounded-lg border border-[#d8dce3] px-2.5 py-1.5 text-sm font-semibold"
             >
               +
@@ -204,43 +254,65 @@ function FilledPage({
 
   useEffect(() => {
     let cancelled = false;
+    let renderTask: { cancel: () => void; promise: Promise<unknown> } | null =
+      null;
     setRendered(false);
 
-    async function renderPage() {
-      const page = await pdfDoc.getPage(pageNumber);
-      if (cancelled) return;
+    async function renderPage(attempt = 0) {
       const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const base = page.getViewport({ scale: 1 });
-      let fitScale = viewerWidth / base.width;
-      if (fitHeight != null) {
-        fitScale = Math.min(fitScale, fitHeight / base.height);
+      if (!canvas) {
+        if (!cancelled && attempt < 10) {
+          requestAnimationFrame(() => void renderPage(attempt + 1));
+        }
+        return;
       }
 
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-      const viewport = page.getViewport({ scale: fitScale * dpr });
-      const displayWidth = viewport.width / dpr;
-      const displayHeight = viewport.height / dpr;
-      const context = canvas.getContext('2d');
-      if (!context) return;
+      try {
+        const page = await pdfDoc.getPage(pageNumber);
+        if (cancelled) return;
 
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      canvas.style.width = `${displayWidth}px`;
-      canvas.style.height = `${displayHeight}px`;
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvas, viewport }).promise;
+        const base = page.getViewport({ scale: 1 });
+        let fitScale = viewerWidth / base.width;
+        if (fitHeight != null && fitHeight > 0) {
+          fitScale = Math.min(fitScale, fitHeight / base.height);
+        }
+        fitScale = Math.max(fitScale, 0.2);
 
-      if (!cancelled) {
-        setSize({ width: displayWidth, height: displayHeight });
-        setRendered(true);
+        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        const viewport = page.getViewport({ scale: fitScale * dpr });
+        const displayWidth = viewport.width / dpr;
+        const displayHeight = viewport.height / dpr;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        renderTask = page.render({ canvas, viewport });
+        await renderTask.promise;
+
+        if (!cancelled) {
+          setSize({ width: displayWidth, height: displayHeight });
+          setRendered(true);
+        }
+      } catch {
+        if (!cancelled && attempt < 3) {
+          window.setTimeout(() => void renderPage(attempt + 1), 80);
+        }
       }
     }
 
     void renderPage();
     return () => {
       cancelled = true;
+      try {
+        renderTask?.cancel();
+      } catch {
+        // ignore
+      }
     };
   }, [pdfDoc, pageNumber, viewerWidth, fitHeight]);
 
@@ -250,7 +322,7 @@ function FilledPage({
       style={
         size.width
           ? { width: size.width, height: size.height }
-          : { width: viewerWidth }
+          : { width: viewerWidth, minHeight: 120 }
       }
     >
       <canvas ref={canvasRef} className="pointer-events-none block" />

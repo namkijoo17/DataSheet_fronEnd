@@ -8,7 +8,6 @@ export type DatasheetInputType =
 
 export type DatasheetSummary = {
   id: number;
-  code: string;
   name: string;
   revision: number;
   fileName: string;
@@ -51,6 +50,8 @@ export type DatasheetItem = {
   required: boolean;
   skippable: boolean;
   formula: string | null;
+  /** 규격/방법 안내 */
+  specDescription: string | null;
   pdfPage: number;
   posX: number;
   posY: number;
@@ -65,7 +66,6 @@ export type DatasheetItem = {
 
 export type DatasheetDetail = {
   id: number;
-  code: string;
   name: string;
   revision: number;
   fileName: string;
@@ -131,6 +131,7 @@ export type DatasheetItemUpsert = {
   required: boolean;
   skippable: boolean;
   formula?: string | null;
+  specDescription?: string | null;
   sortOrder?: number | null;
   pdfPage: number;
   posX: number;

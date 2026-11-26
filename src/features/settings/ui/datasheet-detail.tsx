@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 
 import { ApiError } from '@/shared/api/client';
 import { cn } from '@/shared/lib/utils';
@@ -336,11 +337,26 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
       : Boolean(selection));
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {deleting && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-white/70 backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <Loader2
+            className="size-10 animate-spin text-[#3c3c3c]"
+            aria-hidden
+          />
+          <p className="text-sm font-semibold text-[#1f1f1f]">삭제 중...</p>
+        </div>
+      )}
+
       <div className="shrink-0">
         <DatasheetDetailHeader
           title={data.name}
-          subtitle={`${data.code} · ${formatRevision(data.revision)} · 항목 ${items.length}개`}
+          subtitle={`${formatRevision(data.revision)} · 항목 ${items.length}개`}
           editMode={editMode}
           deleting={deleting}
           onDelete={() => void handleDeleteSheet()}

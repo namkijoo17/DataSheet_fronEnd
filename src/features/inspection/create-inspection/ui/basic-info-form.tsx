@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
 
 import { useAuthStore } from '@/features/auth/session/auth-store';
@@ -21,6 +21,7 @@ import {
   type BasicInfoFormValues,
   type PartNumberSlot,
 } from '../lib/basic-info-fields';
+import { InspectorChangeDialog } from './inspector-change-dialog';
 
 type BasicInfoFormProps = {
   datasheet: DatasheetSummary;
@@ -37,6 +38,7 @@ function resolveUnitOptions(labels: string[]): string[] {
 
 export function BasicInfoForm({ datasheet, values, onChange, onBack, onNext }: BasicInfoFormProps) {
   const user = useAuthStore((state) => state.user);
+  const [inspectorDialogOpen, setInspectorDialogOpen] = useState(false);
   const { data, isPending } = useDatasheetDetail(datasheet.id);
 
   const unitOptions = useMemo(() => {
@@ -69,7 +71,7 @@ export function BasicInfoForm({ datasheet, values, onChange, onBack, onNext }: B
   }, [unitOptions.join('|')]);
 
   const partProgress = countFilledParts(values);
-  const canNext = isBasicInfoComplete(values);
+  const canNext = isBasicInfoComplete(values, user?.name ?? '');
 
   const patch = (partial: Partial<BasicInfoFormValues>) => onChange({ ...values, ...partial });
 
@@ -179,16 +181,18 @@ export function BasicInfoForm({ datasheet, values, onChange, onBack, onNext }: B
                 <button
                   type="button"
                   className="text-xs font-semibold text-[#5f6368]"
-                  onClick={() => {
-                    const next = window.prompt('검사자 이름', values.inspector);
-                    if (next != null) patch({ inspector: next });
-                  }}
+                  onClick={() => setInspectorDialogOpen(true)}
                 >
                   변경
                 </button>
               }
             >
               <p className="text-base font-bold text-[#1f1f1f]">{values.inspector || '—'}</p>
+              {values.inspectorChangeReason.trim() && (
+                <p className="mt-1 line-clamp-2 break-words text-[11px] text-[#8b8f96]">
+                  변경 사유: {values.inspectorChangeReason}
+                </p>
+              )}
             </EnvCard>
 
             <EnvCard label="온도">
@@ -267,6 +271,17 @@ export function BasicInfoForm({ datasheet, values, onChange, onBack, onNext }: B
           다음 · 검사 모드 선택
         </button>
       </div>
+
+      <InspectorChangeDialog
+        open={inspectorDialogOpen}
+        onOpenChange={setInspectorDialogOpen}
+        inspector={values.inspector}
+        reason={values.inspectorChangeReason}
+        defaultInspector={user?.name ?? ''}
+        onSubmit={({ inspector, reason }) =>
+          patch({ inspector, inspectorChangeReason: reason })
+        }
+      />
     </div>
   );
 }

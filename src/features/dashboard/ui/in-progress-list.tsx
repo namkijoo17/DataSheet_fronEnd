@@ -4,20 +4,31 @@ import type { InProgressInspection } from '../model/mock-data';
 
 type InProgressListProps = {
   items: InProgressInspection[];
+  loading?: boolean;
+  errorMessage?: string | null;
 };
 
-export function InProgressList({ items }: InProgressListProps) {
+export function InProgressList({ items, loading = false, errorMessage }: InProgressListProps) {
   return (
     <section className="space-y-3">
       <h2 className="text-lg font-bold text-[#1f1f1f] md:text-xl">
         진행 중인 검사
       </h2>
 
-      <ul className="overflow-hidden rounded-2xl bg-white">
+      {(loading || errorMessage || items.length === 0) && (
+        <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm text-[#8b8f96]">
+          {loading
+            ? '불러오는 중...'
+            : errorMessage ?? '진행 중인 검사가 없습니다.'}
+        </p>
+      )}
+
+      <ul className="overflow-hidden rounded-2xl bg-white empty:hidden">
         {items.map((item, index) => {
-          const progress = Math.round(
-            (item.completedCount / item.totalCount) * 100,
-          );
+          const progress =
+            item.totalCount > 0
+              ? Math.round((item.completedCount / item.totalCount) * 100)
+              : 0;
 
           return (
             <li
@@ -49,7 +60,7 @@ export function InProgressList({ items }: InProgressListProps) {
                 </div>
 
                 <Link
-                  href={`/inspections/${item.id}`}
+                  href={item.href ?? `/inspections/${item.id}`}
                   className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl border border-[#1f1f1f] bg-white px-4 text-sm font-semibold text-[#1f1f1f] transition-colors hover:bg-[#f5f6f7] md:h-12 md:px-5 md:text-base"
                 >
                   이어하기

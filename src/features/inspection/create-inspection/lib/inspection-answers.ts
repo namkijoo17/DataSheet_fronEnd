@@ -31,14 +31,18 @@ export function isItemAnswered(
   }
   if (!answer || answer.skipped) return false;
 
-  if (
-    item.inputType === 'OK_NG' ||
-    item.inputType === 'CHECK' ||
-    item.inputType === 'CIRCLE'
-  ) {
-    // 하단 OK/NG 또는 슬롯 선택 중 하나만 있어도 입력 완료
+  if (item.inputType === 'OK_NG' || item.inputType === 'CIRCLE') {
     if (answer.judgment === 'OK' || answer.judgment === 'NG') return true;
     return answer.slotIndex != null;
+  }
+
+  if (item.inputType === 'CHECK') {
+    if (answer.judgment === 'OK' || answer.judgment === 'NG') return true;
+    if (answer.slotIndex != null) return true;
+    // 불량 수리 내역처럼 여러 칸 체크
+    return (item.slots ?? []).some((slot) =>
+      Boolean(answer.slotValues?.[slot.slotIndex]?.trim()),
+    );
   }
 
   if (item.inputType === 'NUMBER') {
@@ -55,6 +59,30 @@ export function isItemAnswered(
 
   if (answer.value?.trim()) return true;
   return answer.judgment === 'OK' || answer.judgment === 'NG';
+}
+
+/** 결과표용 판정: 값만 있어도 확인된 항목은 OK로 표기 */
+export function resolveDisplayJudgment(
+  item: DatasheetItem,
+  answer: InspectionAnswer | undefined,
+  unitSlotIndex: number | null,
+): 'OK' | 'NG' | 'SKIP' | null {
+  if (!answer) return null;
+  if (answer.skipped) return 'SKIP';
+  if (answer.judgment === 'OK' || answer.judgment === 'NG') {
+    return answer.judgment;
+  }
+
+  if (item.inputType === 'NUMBER') {
+    const judged = judgeNumberDetail(item, answer.value ?? '', unitSlotIndex);
+    if (judged.result === 'EMPTY') return null;
+    return judged.result;
+  }
+
+  if (isItemAnswered(item, answer, 'BASIC')) {
+    return 'OK';
+  }
+  return null;
 }
 
 export function isInspectionComplete(

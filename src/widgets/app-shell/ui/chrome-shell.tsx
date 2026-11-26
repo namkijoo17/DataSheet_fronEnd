@@ -11,8 +11,13 @@ function isDatasheetDetailPath(pathname: string) {
 }
 
 function isInspectionModeFocusPath(pathname: string) {
-  // 검사 시작 플로우 중 모드 선택 화면은 자체 헤더/하단 버튼을 씀
-  return pathname === '/inspections/new' || pathname.startsWith('/inspections/new/');
+  // 검사 진행 화면(신규 시작 /inspections/new, 이어하기 /inspections/{id})은
+  // 자체 헤더/하단 버튼을 쓰므로 앱 헤더·하단 탭을 숨긴다
+  return (
+    pathname === '/inspections/new' ||
+    pathname.startsWith('/inspections/new/') ||
+    /^\/inspections\/\d+\/?$/.test(pathname)
+  );
 }
 
 function ChromeShellInner({ children }: { children: React.ReactNode }) {

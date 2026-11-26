@@ -87,6 +87,7 @@ export function AuthSessionManager() {
         setLogoutNotice('idle');
         clearSession();
         router.replace('/login');
+        window.alert('30분 동안 사용이 없어 자동 로그아웃되었습니다.');
       }
     };
 

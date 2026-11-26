@@ -1,4 +1,13 @@
 export { CreateInspectionFlow } from './ui/create-inspection-flow';
+export { ResumeInspection } from './ui/resume-inspection';
+export {
+  useInProgressInspections,
+  inProgressInspectionsQueryKey,
+} from './model/use-inspections';
+export type {
+  InspectionSummaryResponse,
+  InspectionDetailResponse,
+} from './model/inspection-types';
 export { DatasheetPicker } from './ui/datasheet-picker';
 export { BasicInfoForm } from './ui/basic-info-form';
 export { InspectionModeSelect } from './ui/inspection-mode-select';

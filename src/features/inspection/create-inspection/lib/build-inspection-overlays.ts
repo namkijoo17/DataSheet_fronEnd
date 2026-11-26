@@ -9,7 +9,11 @@ import type {
 import type { BasicInfoFormValues } from './basic-info-fields';
 import { PART_NUMBER_SLOTS } from './basic-info-fields';
 import type { InspectionAnswer, InspectionAnswers } from './inspection-answers';
-import { formatRangeHint, judgeNumberDetail } from './inspection-answers';
+import {
+  formatRangeHint,
+  judgeNumberDetail,
+  resolveDisplayJudgment,
+} from './inspection-answers';
 import { isInspectionItem } from './inspection-sequence';
 import type { InspectionModeId } from '../model/inspection-modes';
 
@@ -27,11 +31,22 @@ export type InspectionResultRow = {
   itemId: number;
   label: string;
   standard: string | null;
+  specDescription: string | null;
   measured: string | null;
   finalValue: string | null;
   judgment: 'OK' | 'NG' | 'SKIP' | null;
   highlightNg: boolean;
 };
+
+function formatStandard(
+  item: DatasheetItem,
+  unitSlotIndex: number | null,
+) {
+  const range = formatRangeHint(item, unitSlotIndex);
+  const spec = item.specDescription?.trim() || null;
+  if (range && spec) return `${range} · ${spec}`;
+  return range ?? spec;
+}
 
 function regionOf(
   position: Pick<
@@ -109,6 +124,21 @@ function overlayForInspectionItem(
       answer.judgment === 'OK' || answer.judgment === 'NG'
         ? answer.judgment
         : null;
+
+    // CHECK 다중 선택(슬롯별 체크)
+    if (item.inputType === 'CHECK' && answer.slotValues) {
+      for (const slot of item.slots ?? []) {
+        if (!answer.slotValues[slot.slotIndex]?.trim()) continue;
+        pushMark(
+          marks,
+          `item-${item.id}-slot-${slot.slotIndex}`,
+          regionOf(slot, detail),
+          'check',
+        );
+      }
+      if (marks.length > 0) return marks;
+    }
+
     const slot =
       findSlot(item, answer.slotIndex) ??
       (judgment ? findJudgmentSlot(item, judgment) : null);
@@ -388,7 +418,8 @@ export function buildInspectionResultRows(params: {
         return {
           itemId: item.id,
           label: item.label,
-          standard: formatRangeHint(item, unitSlotIndex),
+          standard: formatStandard(item, unitSlotIndex),
+          specDescription: item.specDescription?.trim() || null,
           measured: null,
           finalValue: null,
           judgment: 'SKIP' as const,
@@ -402,14 +433,12 @@ export function buildInspectionResultRows(params: {
           answer?.value ?? '',
           unitSlotIndex,
         );
-        const judgment =
-          judged.result === 'EMPTY'
-            ? answer?.judgment ?? null
-            : judged.result;
+        const judgment = resolveDisplayJudgment(item, answer, unitSlotIndex);
         return {
           itemId: item.id,
           label: item.label,
-          standard: formatRangeHint(item, unitSlotIndex),
+          standard: formatStandard(item, unitSlotIndex),
+          specDescription: item.specDescription?.trim() || null,
           measured: answer?.value?.trim() || null,
           finalValue:
             judged.value != null ? String(judged.value) : answer?.value ?? null,
@@ -418,22 +447,26 @@ export function buildInspectionResultRows(params: {
         };
       }
 
-      const judgment =
-        answer?.judgment === 'OK' || answer?.judgment === 'NG'
-          ? answer.judgment
-          : null;
+      const judgment = resolveDisplayJudgment(item, answer, unitSlotIndex);
 
       let measured: string | null = null;
-      if (answer?.slotIndex != null) {
+      if (answer?.slotValues && Object.values(answer.slotValues).some(Boolean)) {
+        measured = (item.slots ?? [])
+          .filter((slot) => answer.slotValues?.[slot.slotIndex]?.trim())
+          .map((slot) => slot.label || answer.slotValues?.[slot.slotIndex] || '')
+          .filter(Boolean)
+          .join(', ');
+        if (!measured) {
+          measured = Object.values(answer.slotValues)
+            .filter(Boolean)
+            .join(', ');
+        }
+      } else if (answer?.slotIndex != null) {
         measured =
           (item.slots ?? []).find((s) => s.slotIndex === answer.slotIndex)
             ?.label ?? null;
       } else if (answer?.value?.trim()) {
         measured = answer.value.trim();
-      } else if (answer?.slotValues) {
-        measured = Object.values(answer.slotValues)
-          .filter(Boolean)
-          .join(', ');
       } else {
         measured = judgment;
       }
@@ -441,7 +474,8 @@ export function buildInspectionResultRows(params: {
       return {
         itemId: item.id,
         label: item.label,
-        standard: formatRangeHint(item, unitSlotIndex),
+        standard: formatStandard(item, unitSlotIndex),
+        specDescription: item.specDescription?.trim() || null,
         measured,
         finalValue: measured,
         judgment,

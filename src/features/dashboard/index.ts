@@ -5,3 +5,4 @@ export {
   MOCK_DASHBOARD_SUMMARY,
   MOCK_IN_PROGRESS_INSPECTIONS,
 } from './model/mock-data';
+export type { InProgressInspection } from './model/mock-data';

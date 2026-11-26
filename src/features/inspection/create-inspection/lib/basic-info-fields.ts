@@ -33,6 +33,8 @@ export type BasicInfoFormValues = {
   line: string;
   inspectDate: string;
   inspector: string;
+  /** 검사자를 기본(로그인 계정)과 다르게 변경한 경우의 사유 */
+  inspectorChangeReason: string;
   temperature: string;
   humidity: string;
   parts: Record<PartNumberSlot, string>;
@@ -47,6 +49,7 @@ export function emptyBasicInfoValues(
     line: '',
     inspectDate: new Date().toISOString().slice(0, 10),
     inspector,
+    inspectorChangeReason: '',
     temperature: '',
     humidity: '',
     parts: {
@@ -60,11 +63,22 @@ export function emptyBasicInfoValues(
   };
 }
 
-export function isBasicInfoComplete(values: BasicInfoFormValues) {
+export function isBasicInfoComplete(
+  values: BasicInfoFormValues,
+  defaultInspector = '',
+) {
   if (!values.serialNo.trim()) return false;
   if (!values.unit.trim()) return false;
   if (!values.inspectDate.trim()) return false;
   if (!values.inspector.trim()) return false;
+  // 기본 검사자(로그인 계정)와 다르면 변경 사유 필수
+  if (
+    defaultInspector.trim() &&
+    values.inspector.trim() !== defaultInspector.trim() &&
+    !values.inspectorChangeReason.trim()
+  ) {
+    return false;
+  }
   return PART_NUMBER_SLOTS.every((slot) => values.parts[slot].trim());
 }
 

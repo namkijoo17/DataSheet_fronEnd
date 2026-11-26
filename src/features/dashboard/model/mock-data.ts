@@ -11,6 +11,8 @@ export type InProgressInspection = {
   statusLabel: string;
   completedCount: number;
   totalCount: number;
+  /** 이어하기 링크 (기본: /inspections/{id}) */
+  href?: string;
 };
 
 export const MOCK_DASHBOARD_SUMMARY: DashboardSummary = {

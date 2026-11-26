@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 
 import {
@@ -19,6 +19,7 @@ import {
   type InspectionAnswer,
   type InspectionAnswers,
 } from '../lib/inspection-answers';
+import type { SaveStatus } from '../lib/inspection-save-queue';
 import { isInspectionItem } from '../lib/inspection-sequence';
 import type { InspectionModeId } from '../model/inspection-modes';
 import { INSPECTION_MODES } from '../model/inspection-modes';
@@ -40,6 +41,19 @@ type InspectionFillFormProps = {
   onChange: (answers: InspectionAnswers) => void;
   onBack: () => void;
   onComplete: () => void;
+  /** 보류: 저장된 상태로 검사를 나간다 */
+  onHold?: () => void;
+  /** 서버 저장 상태 표시 */
+  saveStatus?: SaveStatus;
+  /** 이어하기: 처음 열 때 첫 미입력 항목으로 이동 */
+  startAtFirstUnanswered?: boolean;
+};
+
+const SAVE_STATUS_LABEL: Record<SaveStatus, { text: string; className: string }> = {
+  idle: { text: '저장됨', className: 'text-[#8b8f96]' },
+  saving: { text: '저장 중…', className: 'text-[#5f6368]' },
+  retrying: { text: '저장 재시도 중…', className: 'text-[#b45309]' },
+  error: { text: '저장 실패', className: 'text-[#b91c1c]' },
 };
 
 function patchAnswer(
@@ -62,9 +76,7 @@ function judgmentPatch(
   const patch: Partial<InspectionAnswer> = { judgment };
   if (
     item.array &&
-    (item.inputType === 'OK_NG' ||
-      item.inputType === 'CHECK' ||
-      item.inputType === 'CIRCLE') &&
+    (item.inputType === 'OK_NG' || item.inputType === 'CHECK' || item.inputType === 'CIRCLE') &&
     (item.slots?.length ?? 0) > 0
   ) {
     const matched = (item.slots ?? []).find((slot) => {
@@ -95,11 +107,15 @@ export function InspectionFillForm({
   onChange,
   onBack,
   onComplete,
+  onHold,
+  saveStatus = 'idle',
+  startAtFirstUnanswered = false,
 }: InspectionFillFormProps) {
-  const { data, isPending, isError, error, refetch } =
-    useDatasheetDetail(datasheetId);
+  const { data, isPending, isError, error, refetch } = useDatasheetDetail(datasheetId);
   const [index, setIndex] = useState(0);
+  const positionedRef = useRef(!startAtFirstUnanswered);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [autoNext, setAutoNext] = useState(true);
 
   const items = useMemo(
     () => listInspectionItems(normalizeDatasheetItems(data?.items ?? [])),
@@ -124,21 +140,23 @@ export function InspectionFillForm({
 
   useEffect(() => {
     if (items.length === 0) return;
+    if (!positionedRef.current) {
+      positionedRef.current = true;
+      const firstOpen = items.findIndex((item) => !isItemAnswered(item, answers[item.id], mode));
+      setIndex(firstOpen === -1 ? items.length - 1 : firstOpen);
+      return;
+    }
     if (index > items.length - 1) setIndex(items.length - 1);
-  }, [items.length, index]);
+  }, [items, index, answers, mode]);
 
   const current = items[index] ?? null;
   const prev = index > 0 ? items[index - 1] : null;
   const next = index < items.length - 1 ? items[index + 1] : null;
   const answer = current ? answers[current.id] : undefined;
 
-  const percent =
-    items.length === 0
-      ? 0
-      : Math.round(((index + 1) / items.length) * 100);
+  const percent = items.length === 0 ? 0 : Math.round(((index + 1) / items.length) * 100);
   const complete = isInspectionComplete(items, answers, mode);
-  const modeTitle =
-    INSPECTION_MODES.find((entry) => entry.id === mode)?.title ?? '검사';
+  const modeTitle = INSPECTION_MODES.find((entry) => entry.id === mode)?.title ?? '검사';
 
   const goNext = () => {
     if (index < items.length - 1) {
@@ -164,20 +182,23 @@ export function InspectionFillForm({
     onChange(patchAnswer(answers, current.id, patch));
   };
 
+  /** 정상(OK) 선택 시 '자동 다음 항목'이 켜져 있으면 잠시 후 다음 항목으로 */
+  const advanceIfAuto = () => {
+    if (!autoNext) return;
+    if (index >= items.length - 1) return;
+    window.setTimeout(() => {
+      setIndex((i) => Math.min(i + 1, items.length - 1));
+    }, 180);
+  };
+
   if (isPending) {
-    return (
-      <CenterMessage text="검사 항목을 불러오는 중..." onBack={onBack} />
-    );
+    return <CenterMessage text="검사 항목을 불러오는 중..." onBack={onBack} />;
   }
 
   if (isError) {
     return (
       <CenterMessage
-        text={
-          error instanceof Error
-            ? error.message
-            : '검사 항목을 불러오지 못했습니다.'
-        }
+        text={error instanceof Error ? error.message : '검사 항목을 불러오지 못했습니다.'}
         actionLabel="다시 시도"
         onAction={() => void refetch()}
         onBack={onBack}
@@ -186,9 +207,7 @@ export function InspectionFillForm({
   }
 
   if (!current) {
-    return (
-      <CenterMessage text="검사 항목이 없습니다." onBack={onBack} />
-    );
+    return <CenterMessage text="검사 항목이 없습니다." onBack={onBack} />;
   }
 
   const range = resolveItemRange(current, unitSlotIndex);
@@ -199,9 +218,7 @@ export function InspectionFillForm({
       : null;
   const effectiveJudgment =
     answer?.judgment ??
-    (numberDetail && numberDetail.result !== 'EMPTY'
-      ? numberDetail.result
-      : null);
+    (numberDetail && numberDetail.result !== 'EMPTY' ? numberDetail.result : null);
 
   const isJudgmentType =
     current.inputType === 'OK_NG' ||
@@ -225,338 +242,375 @@ export function InspectionFillForm({
     });
   // 선택지가 OK/NG가 아닌 배열(CIRCLE 등)만 슬롯 버튼, OK/NG는 한 줄만
   const showChoiceSlots =
-    isJudgmentType &&
-    current.array &&
-    judgmentSlots.length > 0 &&
-    !hasOkNgSlots;
+    isJudgmentType && current.array && judgmentSlots.length > 0 && !hasOkNgSlots;
   const showOkNg = isJudgmentType && !showChoiceSlots;
 
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[#f4f6f8]">
       {/* Header */}
-      <header className="shrink-0 border-b border-[#e8eaed] bg-white px-3 py-2.5">
-        <div className="flex items-center gap-2">
+      <header className="shrink-0 bg-white px-4 pb-0 pt-3 md:px-8 md:pt-4">
+        <div className="flex items-center gap-2 md:gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="flex size-9 items-center justify-center rounded-lg text-[#1f1f1f] hover:bg-[#f5f6f7]"
+            className="flex size-9 items-center justify-center rounded-lg text-[#1f1f1f] hover:bg-[#f5f6f7] md:size-11"
             aria-label="뒤로"
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft className="size-5 md:size-6" />
           </button>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate text-sm font-bold text-[#1f1f1f]">
-                {serialNo || '기번 없음'}
-              </p>
-              <span className="rounded-md bg-[#eceff3] px-1.5 py-0.5 text-[10px] font-semibold text-[#5f6368]">
-                {modeTitle}
-              </span>
-            </div>
-          </div>
-          <div className="min-w-[7rem] text-right">
-            <p className="text-xs font-semibold text-[#1f1f1f]">
-              {index + 1} / {items.length} · {percent}%
-            </p>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#e8eaed]">
-              <div
-                className="h-full rounded-full bg-[#3c3c3c] transition-all"
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-          </div>
+          <p className="truncate text-sm font-bold text-[#1f1f1f] md:text-xl">
+            {serialNo || '기번 없음'}
+          </p>
+          <span className="shrink-0 rounded-md bg-[#eceff3] px-1.5 py-0.5 text-[10px] font-semibold text-[#5f6368] md:px-2.5 md:py-1 md:text-sm">
+            {modeTitle}
+          </span>
+          <div className="min-w-0 flex-1" />
+          <p className="shrink-0 text-xs font-semibold text-[#5f6368] md:text-base">
+            {index + 1} / {items.length} · {percent}%
+          </p>
+          <span
+            className={cn(
+              'shrink-0 text-[11px] font-semibold md:text-sm',
+              SAVE_STATUS_LABEL[saveStatus].className,
+            )}
+            aria-live="polite"
+          >
+            {SAVE_STATUS_LABEL[saveStatus].text}
+          </span>
           <button
             type="button"
-            className="ml-1 rounded-lg border border-[#d8dce3] px-2.5 py-1.5 text-xs font-semibold text-[#5f6368]"
-            onClick={() => window.alert('보류 기능은 준비 중입니다.')}
+            className="shrink-0 rounded-lg border border-[#d8dce3] px-2.5 py-1.5 text-xs font-semibold text-[#1f1f1f] md:h-11 md:rounded-xl md:px-5 md:text-base"
+            onClick={() => onHold?.()}
           >
             보류
           </button>
         </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e8eaed] md:mt-4 md:h-2">
+          <div
+            className="h-full rounded-full bg-[#3c3c3c] transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
       </header>
-
-      {/* Prev / Next strip */}
-      <div className="grid shrink-0 grid-cols-2 gap-px border-b border-[#e8eaed] bg-[#e8eaed]">
-        <button
-          type="button"
-          disabled={!prev}
-          onClick={goPrev}
-          className="bg-white px-3 py-2.5 text-left disabled:opacity-40"
-        >
-          <p className="text-[11px] font-semibold text-[#8b8f96]">
-            ◀ 이전 · {prev ? `${index}/${items.length}` : '-'}
-          </p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-[#1f1f1f]">
-            {prev?.label ?? '없음'}
-          </p>
-          {prev && answers[prev.id]?.judgment && (
-            <p
-              className={cn(
-                'mt-0.5 text-xs font-bold',
-                answers[prev.id]?.judgment === 'OK'
-                  ? 'text-[#166534]'
-                  : 'text-[#b91c1c]',
-              )}
-            >
-              {answers[prev.id]?.judgment}
-            </p>
-          )}
-        </button>
-        <button
-          type="button"
-          disabled={!next}
-          onClick={goNext}
-          className="bg-white px-3 py-2.5 text-right disabled:opacity-40"
-        >
-          <p className="text-[11px] font-semibold text-[#8b8f96]">
-            다음 ▶ · {next ? `${index + 2}/${items.length}` : '-'}
-          </p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-[#1f1f1f]">
-            {next?.label ?? '없음'}
-          </p>
-          {next && formatRangeHint(next, unitSlotIndex) && (
-            <p className="mt-0.5 truncate text-[11px] text-[#8b8f96]">
-              {formatRangeHint(next, unitSlotIndex)}
-            </p>
-          )}
-        </button>
-      </div>
+      <div className="h-3 shrink-0 border-b border-[#e8eaed] bg-white md:h-4" />
 
       {/* Body */}
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        <section>
-          <p className="text-xs font-semibold text-[#8b8f96]">
-            {current.itemNo != null ? `${current.itemNo}` : `${index + 1}`}
-            {datasheetLabel ? ` · ${datasheetLabel}` : ''}
-            {' · '}
-            {index + 1} / {items.length}
-            {unitLabel ? ` · ${unitLabel}` : ''}
-          </p>
-          <h2 className="mt-1 text-xl font-bold leading-snug text-[#1f1f1f]">
-            {current.label}
-            {rangeHint ? ` — ${rangeHint}` : ''}
-          </h2>
-          {current.groupName ? (
-            <p className="mt-1 text-sm text-[#8b8f96]">{current.groupName}</p>
-          ) : null}
-        </section>
-
-        {current.inputType === 'NUMBER' && (
-          <>
-            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-white px-3 py-3">
-              <Metric
-                label="하한"
-                value={range.minValue == null ? '없음' : String(range.minValue)}
-              />
-              <Metric
-                label="상한"
-                value={range.maxValue == null ? '없음' : String(range.maxValue)}
-              />
-              <Metric
-                label="단위 · 소수점"
-                value={`${current.unit ?? '-'} · ${current.decimalPlaces ?? 0}`}
-              />
-            </div>
-
-            <section className="space-y-2">
-              <p className="text-sm font-bold text-[#1f1f1f]">측정값</p>
-              <label className="flex min-h-[72px] items-center justify-between gap-3 rounded-2xl border border-[#e8eaed] bg-white px-4 py-3">
-                <span className="shrink-0 text-sm text-[#9aa0a6]">
-                  {answer?.value ? '측정값' : '탭하여 키패드 열기'}
-                </span>
-                <input
-                  value={answer?.value ?? ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const judged = judgeNumberDetail(
-                      current,
-                      value,
-                      unitSlotIndex,
-                    );
-                    updateCurrent({
-                      value,
-                      judgment:
-                        judged.result === 'EMPTY' ? null : judged.result,
-                    });
-                  }}
-                  inputMode="decimal"
-                  className="w-full max-w-[50%] bg-transparent text-right text-3xl font-bold text-[#1f1f1f] outline-none"
-                  placeholder="0"
-                />
-              </label>
-
-              {numberDetail &&
-                numberDetail.result !== 'EMPTY' &&
-                numberDetail.value != null && (
-                  <div
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 md:px-8 md:py-5">
+        <div className="mx-auto w-full max-w-[860px] space-y-3 md:space-y-5">
+          {/* Prev / Next cards */}
+          <div className="grid grid-cols-2 gap-2 md:gap-4">
+            <button
+              type="button"
+              disabled={!prev}
+              onClick={goPrev}
+              className="rounded-xl bg-white px-3 py-2.5 text-left shadow-sm disabled:opacity-40 md:rounded-2xl md:px-5 md:py-4"
+            >
+              <p className="truncate text-[11px] font-semibold text-[#8b8f96] md:text-sm">
+                ◀ 이전 · {prev ? `${index}/${items.length}` : '-'}
+              </p>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-bold text-[#1f1f1f] md:text-lg">
+                  {prev?.label ?? '없음'}
+                </p>
+                {prev && answers[prev.id]?.judgment && (
+                  <span
                     className={cn(
-                      'flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold',
-                      numberDetail.result === 'OK'
-                        ? 'bg-[#ecfdf3] text-[#166534]'
-                        : 'bg-[#fef2f2] text-[#b91c1c]',
+                      'shrink-0 text-xs font-bold md:text-base',
+                      answers[prev.id]?.judgment === 'OK' ? 'text-[#166534]' : 'text-[#b91c1c]',
                     )}
                   >
-                    <p className="min-w-0 truncate">
-                      측정값 {numberDetail.value}
-                      {current.unit ? ` ${current.unit}` : ''}
-                      {numberDetail.deltaFromMin != null
-                        ? ` · 하한 대비 ${numberDetail.deltaFromMin >= 0 ? '+' : ''}${numberDetail.deltaFromMin}`
-                        : ''}
-                    </p>
-                    <span className="shrink-0 font-bold">
-                      {numberDetail.result}
-                    </span>
-                  </div>
+                    {answers[prev.id]?.judgment}
+                  </span>
                 )}
-            </section>
-          </>
-        )}
+              </div>
+            </button>
+            <button
+              type="button"
+              disabled={!next}
+              onClick={goNext}
+              className="rounded-xl border border-[#d8dce3] bg-white px-3 py-2.5 text-left disabled:opacity-40 md:rounded-2xl md:px-5 md:py-4"
+            >
+              <p className="truncate text-[11px] font-semibold text-[#8b8f96] md:text-sm">
+                다음 ▶ · {next ? `${index + 2}/${items.length}` : '-'}
+              </p>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-bold text-[#1f1f1f] md:text-lg">
+                  {next?.label ?? '없음'}
+                </p>
+                {next && formatRangeHint(next, unitSlotIndex) && (
+                  <span className="shrink-0 truncate text-[11px] text-[#8b8f96] md:text-sm">
+                    {formatRangeHint(next, unitSlotIndex)}
+                  </span>
+                )}
+              </div>
+            </button>
+          </div>
 
-        {showChoiceSlots && (
-          <div className="grid grid-cols-2 gap-2">
-            {judgmentSlots.map((slot) => {
-              const active = answer?.slotIndex === slot.slotIndex;
-              return (
-                <button
-                  key={slot.id}
-                  type="button"
-                  onClick={() =>
-                    updateCurrent({
-                      slotIndex: slot.slotIndex,
-                      judgment:
-                        slot.label.toUpperCase().includes('NG') ||
-                        slot.label.includes('불')
-                          ? 'NG'
-                          : 'OK',
-                    })
-                  }
+          <section>
+            <p className="text-xs font-semibold text-[#8b8f96] md:text-base">
+              {current.itemNo != null ? `${current.itemNo}` : `${index + 1}`}
+              {datasheetLabel ? ` · ${datasheetLabel}` : ''}
+              {' · '}
+              {index + 1} / {items.length}
+              {unitLabel ? ` · ${unitLabel}` : ''}
+            </p>
+            <h2 className="mt-1 text-xl font-bold leading-snug text-[#1f1f1f] md:mt-2 md:text-3xl md:leading-snug">
+              {current.label}
+              {rangeHint ? ` — ${rangeHint}` : ''}
+            </h2>
+            {current.groupName ? (
+              <p className="mt-1 text-sm text-[#8b8f96] md:mt-2 md:text-lg">{current.groupName}</p>
+            ) : null}
+          </section>
+
+          {(current.specDescription?.trim() || current.inputType === 'NUMBER') && (
+            <div className="space-y-2 rounded-2xl bg-white px-3 py-3 md:space-y-4 md:px-6 md:py-5">
+              {current.specDescription?.trim() ? (
+                <div>
+                  <p className="text-[11px] font-semibold text-[#8b8f96] md:text-sm">규격설명</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[#1f1f1f] md:mt-2 md:text-lg md:leading-relaxed">
+                    {current.specDescription.trim()}
+                  </p>
+                </div>
+              ) : null}
+              {current.inputType === 'NUMBER' && (
+                <div
                   className={cn(
-                    'h-14 rounded-2xl px-3 text-lg font-bold transition-colors',
-                    active
-                      ? 'bg-[#3c3c3c] text-white'
-                      : 'border-2 border-[#d8dce3] bg-white text-[#1f1f1f]',
+                    'grid grid-cols-3 divide-x divide-[#f0f2f4]',
+                    current.specDescription?.trim() && 'border-t border-[#f0f2f4] pt-3 md:pt-4',
                   )}
                 >
-                  {slot.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {(current.inputType === 'TEXT' || current.inputType === 'MIXED') &&
-          current.array &&
-          (current.slots?.length ?? 0) > 0 && (
-            <div className="space-y-2">
-              {(current.slots ?? []).map((slot) => (
-                <label
-                  key={slot.id}
-                  className="flex min-h-[56px] items-center gap-3 rounded-2xl border border-[#e8eaed] bg-white px-4"
-                >
-                  <span className="w-16 shrink-0 text-sm font-semibold text-[#8b8f96]">
-                    {slot.label}
-                  </span>
-                  <input
-                    value={answer?.slotValues?.[slot.slotIndex] ?? ''}
-                    onChange={(e) =>
-                      updateCurrent({
-                        slotValues: {
-                          ...answer?.slotValues,
-                          [slot.slotIndex]: e.target.value,
-                        },
-                      })
-                    }
-                    className="w-full bg-transparent text-base font-semibold text-[#1f1f1f] outline-none"
-                    placeholder="입력"
+                  <Metric
+                    label="하한"
+                    value={range.minValue == null ? '없음' : String(range.minValue)}
                   />
-                </label>
-              ))}
+                  <Metric
+                    label="상한"
+                    value={range.maxValue == null ? '없음' : String(range.maxValue)}
+                  />
+                  <Metric
+                    label="단위 · 소수점"
+                    value={`${current.unit ?? '-'} · ${current.decimalPlaces ?? 0}`}
+                  />
+                </div>
+              )}
             </div>
           )}
 
-        {(current.inputType === 'TEXT' || current.inputType === 'MIXED') &&
-          !current.array && (
-            <label className="flex min-h-[72px] items-center rounded-2xl border border-[#e8eaed] bg-white px-4">
-              <input
-                value={answer?.value ?? ''}
-                onChange={(e) => updateCurrent({ value: e.target.value })}
-                className="w-full bg-transparent text-lg font-semibold text-[#1f1f1f] outline-none"
-                placeholder="입력"
-              />
-            </label>
-          )}
+          <div className="space-y-3 md:space-y-5">
+            {current.inputType === 'NUMBER' && (
+              <>
+                <section className="space-y-2">
+                  <p className="text-sm font-bold text-[#1f1f1f] md:text-lg">측정값</p>
+                  <label className="flex min-h-[72px] items-center justify-between gap-3 rounded-2xl border-2 border-[#1f1f1f] bg-white px-4 py-3 md:min-h-[104px] md:px-6 md:py-4">
+                    <span className="shrink-0 text-sm text-[#9aa0a6] md:text-lg">
+                      {answer?.value ? '측정값' : '탭하여 키패드 열기'}
+                    </span>
+                    <input
+                      value={answer?.value ?? ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const judged = judgeNumberDetail(current, value, unitSlotIndex);
+                        updateCurrent({
+                          value,
+                          judgment: judged.result === 'EMPTY' ? null : judged.result,
+                        });
+                      }}
+                      inputMode="decimal"
+                      className="w-full max-w-[60%] bg-transparent text-right text-3xl font-bold text-[#1f1f1f] outline-none md:text-5xl"
+                      placeholder="0"
+                    />
+                  </label>
 
-        {showOkNg && (
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                updateCurrent(judgmentPatch(current, 'OK', answer))
-              }
-              className={cn(
-                'h-14 rounded-2xl border-2 text-lg font-bold transition-colors',
-                effectiveJudgment === 'OK'
-                  ? 'border-[#166534] bg-[#ecfdf3] text-[#166534]'
-                  : 'border-[#d8dce3] bg-white text-[#166534]',
+                  {numberDetail &&
+                    numberDetail.result !== 'EMPTY' &&
+                    numberDetail.value != null && (
+                      <div
+                        className={cn(
+                          'flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold md:px-5 md:py-4 md:text-lg',
+                          numberDetail.result === 'OK'
+                            ? 'bg-[#ecfdf3] text-[#166534]'
+                            : 'bg-[#fef2f2] text-[#b91c1c]',
+                        )}
+                      >
+                        <p className="min-w-0 truncate">
+                          측정값 {numberDetail.value}
+                          {current.unit ? ` ${current.unit}` : ''}
+                          {numberDetail.deltaFromMin != null
+                            ? ` · 하한 대비 ${numberDetail.deltaFromMin >= 0 ? '+' : ''}${numberDetail.deltaFromMin}`
+                            : ''}
+                        </p>
+                        <span className="shrink-0 font-bold">{numberDetail.result}</span>
+                      </div>
+                    )}
+                </section>
+              </>
+            )}
+
+            {showChoiceSlots && (
+              <div className="grid grid-cols-2 gap-2 md:gap-4">
+                {judgmentSlots.map((slot) => {
+                  const multiCheck = current.inputType === 'CHECK';
+                  const active = multiCheck
+                    ? Boolean(answer?.slotValues?.[slot.slotIndex]?.trim())
+                    : answer?.slotIndex === slot.slotIndex;
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => {
+                        if (multiCheck) {
+                          const nextValues = { ...answer?.slotValues };
+                          if (nextValues[slot.slotIndex]?.trim()) {
+                            delete nextValues[slot.slotIndex];
+                          } else {
+                            nextValues[slot.slotIndex] = slot.label || 'Y';
+                          }
+                          const anyChecked = Object.values(nextValues).some((v) =>
+                            Boolean(v?.trim()),
+                          );
+                          updateCurrent({
+                            slotValues: nextValues,
+                            slotIndex: null,
+                            judgment: anyChecked ? 'OK' : null,
+                          });
+                          return;
+                        }
+                        const isNg =
+                          slot.label.toUpperCase().includes('NG') || slot.label.includes('불');
+                        updateCurrent({
+                          slotIndex: slot.slotIndex,
+                          judgment: isNg ? 'NG' : 'OK',
+                        });
+                        if (!isNg) advanceIfAuto();
+                      }}
+                      className={cn(
+                        'h-14 rounded-2xl px-3 text-lg font-bold transition-colors md:h-20 md:text-2xl',
+                        active
+                          ? 'bg-[#3c3c3c] text-white'
+                          : 'border-2 border-[#d8dce3] bg-white text-[#1f1f1f]',
+                      )}
+                    >
+                      {slot.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {(current.inputType === 'TEXT' || current.inputType === 'MIXED') &&
+              current.array &&
+              (current.slots?.length ?? 0) > 0 && (
+                <div className="space-y-2">
+                  {(current.slots ?? []).map((slot) => (
+                    <label
+                      key={slot.id}
+                      className="flex min-h-[56px] items-center gap-3 rounded-2xl border border-[#e8eaed] bg-white px-4 md:min-h-[80px] md:gap-4 md:px-6"
+                    >
+                      <span className="w-16 shrink-0 text-sm font-semibold text-[#8b8f96] md:w-24 md:text-lg">
+                        {slot.label}
+                      </span>
+                      <input
+                        value={answer?.slotValues?.[slot.slotIndex] ?? ''}
+                        onChange={(e) =>
+                          updateCurrent({
+                            slotValues: {
+                              ...answer?.slotValues,
+                              [slot.slotIndex]: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full bg-transparent text-base font-semibold text-[#1f1f1f] outline-none md:text-2xl"
+                        placeholder="입력"
+                      />
+                    </label>
+                  ))}
+                </div>
               )}
-            >
-              OK
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                updateCurrent(judgmentPatch(current, 'NG', answer))
-              }
-              className={cn(
-                'h-14 rounded-2xl border-2 text-lg font-bold transition-colors',
-                effectiveJudgment === 'NG'
-                  ? 'border-[#b91c1c] bg-[#fef2f2] text-[#b91c1c]'
-                  : 'border-[#d8dce3] bg-white text-[#b91c1c]',
-              )}
-            >
-              NG
-            </button>
+
+            {(current.inputType === 'TEXT' || current.inputType === 'MIXED') && !current.array && (
+              <label className="flex min-h-[72px] items-center rounded-2xl border border-[#e8eaed] bg-white px-4 md:min-h-[104px] md:px-6">
+                <input
+                  value={answer?.value ?? ''}
+                  onChange={(e) => updateCurrent({ value: e.target.value })}
+                  className="w-full bg-transparent text-lg font-semibold text-[#1f1f1f] outline-none md:text-3xl"
+                  placeholder="입력"
+                />
+              </label>
+            )}
+
+            {showOkNg && (
+              <div className="grid grid-cols-2 gap-2 md:gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateCurrent(judgmentPatch(current, 'OK', answer));
+                    advanceIfAuto();
+                  }}
+                  className={cn(
+                    'h-14 rounded-2xl border-2 text-lg font-bold transition-colors md:h-[72px] md:text-3xl',
+                    effectiveJudgment === 'OK'
+                      ? 'border-[#166534] bg-[#ecfdf3] text-[#166534]'
+                      : 'border-[#d8dce3] bg-white text-[#166534]',
+                  )}
+                >
+                  OK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateCurrent(judgmentPatch(current, 'NG', answer))}
+                  className={cn(
+                    'h-14 rounded-2xl border-2 text-lg font-bold transition-colors md:h-[72px] md:text-3xl',
+                    effectiveJudgment === 'NG'
+                      ? 'border-[#b91c1c] bg-[#fef2f2] text-[#b91c1c]'
+                      : 'border-[#d8dce3] bg-white text-[#b91c1c]',
+                  )}
+                >
+                  NG
+                </button>
+              </div>
+            )}
+
+            {mode === 'PARTS_SHIPPING' && current.skippable && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange({
+                    ...answers,
+                    [current.id]: { skipped: true },
+                  });
+                }}
+                className="w-full rounded-xl bg-[#f5f6f7] py-3 text-sm font-semibold text-[#5f6368] md:py-5 md:text-lg"
+              >
+                이 항목 SKIP
+              </button>
+            )}
           </div>
-        )}
-
-        {mode === 'PARTS_SHIPPING' && current.skippable && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange({
-                ...answers,
-                [current.id]: { skipped: true },
-              });
-            }}
-            className="w-full rounded-xl bg-[#f5f6f7] py-3 text-sm font-semibold text-[#5f6368]"
-          >
-            이 항목 SKIP
-          </button>
-        )}
+        </div>
       </div>
 
       {/* Bottom */}
-      <div className="shrink-0 border-t border-[#e8eaed] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="grid grid-cols-4 gap-2">
+      <div className="shrink-0 border-t border-[#e8eaed] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-8 md:py-4">
+        <div className="mx-auto grid w-full max-w-[860px] grid-cols-4 gap-2 md:grid-cols-[1fr_1.2fr_1fr_1.6fr] md:gap-3">
           <button
             type="button"
             onClick={goPrev}
             disabled={!prev}
-            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f] disabled:opacity-40"
+            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f] disabled:opacity-40 md:h-16 md:text-lg"
           >
             이전
           </button>
           <button
             type="button"
             onClick={() => setJumpOpen(true)}
-            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f]"
+            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f] md:h-16 md:text-lg"
           >
             항목 이동
           </button>
           <button
             type="button"
             onClick={resetCurrent}
-            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f]"
+            className="h-12 rounded-xl border border-[#d8dce3] bg-white text-sm font-semibold text-[#1f1f1f] md:h-16 md:text-lg"
           >
             재검사
           </button>
@@ -570,7 +624,7 @@ export function InspectionFillForm({
               }
               goNext();
             }}
-            className="h-12 rounded-xl bg-[#3c3c3c] text-sm font-bold text-white"
+            className="h-12 rounded-xl bg-[#3c3c3c] text-sm font-bold text-white md:h-16 md:text-xl"
           >
             {index >= items.length - 1 ? '완료' : '다음 항목'}
           </button>
@@ -579,18 +633,18 @@ export function InspectionFillForm({
 
       {jumpOpen && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center">
-          <div className="max-h-[70svh] w-full overflow-hidden rounded-t-2xl bg-white sm:max-w-md sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-[#eceef1] px-4 py-3">
-              <p className="font-bold text-[#1f1f1f]">항목 이동</p>
+          <div className="max-h-[70svh] w-full overflow-hidden rounded-t-2xl bg-white sm:max-w-md sm:rounded-2xl md:max-h-[80svh] md:max-w-3xl">
+            <div className="flex items-center justify-between border-b border-[#eceef1] px-4 py-3 md:px-6 md:py-4">
+              <p className="font-bold text-[#1f1f1f] md:text-xl">항목 이동</p>
               <button
                 type="button"
                 onClick={() => setJumpOpen(false)}
-                className="text-sm font-semibold text-[#5f6368]"
+                className="text-sm font-semibold text-[#5f6368] md:h-11 md:px-4 md:text-lg"
               >
                 닫기
               </button>
             </div>
-            <ul className="max-h-[55svh] overflow-y-auto p-2">
+            <ul className="max-h-[55svh] overflow-y-auto p-2 md:grid md:max-h-[66svh] md:grid-cols-2 md:gap-1 md:p-3">
               {items.map((item, i) => {
                 const done = isItemAnswered(item, answers[item.id], mode);
                 return (
@@ -602,19 +656,19 @@ export function InspectionFillForm({
                         setJumpOpen(false);
                       }}
                       className={cn(
-                        'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left',
+                        'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left md:min-h-14 md:px-4',
                         i === index ? 'bg-[#f5f6f7]' : 'hover:bg-[#fafafa]',
                       )}
                     >
-                      <span className="w-6 text-sm font-bold text-[#8b8f96]">
+                      <span className="w-6 text-sm font-bold text-[#8b8f96] md:w-8 md:text-base">
                         {i + 1}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#1f1f1f]">
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#1f1f1f] md:text-lg">
                         {item.label}
                       </span>
                       <span
                         className={cn(
-                          'text-xs font-bold',
+                          'text-xs font-bold md:text-base',
                           done ? 'text-[#166534]' : 'text-[#9aa0a6]',
                         )}
                       >
@@ -634,9 +688,9 @@ export function InspectionFillForm({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[11px] font-semibold text-[#8b8f96]">{label}</p>
-      <p className="mt-1 truncate text-sm font-bold text-[#1f1f1f]">{value}</p>
+    <div className="min-w-0 px-3 first:pl-0 md:px-5 md:first:pl-0">
+      <p className="text-[11px] font-semibold text-[#8b8f96] md:text-sm">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold text-[#1f1f1f] md:text-2xl">{value}</p>
     </div>
   );
 }
@@ -668,11 +722,7 @@ function CenterMessage({
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4">
         <p className="text-sm text-[#8b8f96]">{text}</p>
         {actionLabel && onAction && (
-          <button
-            type="button"
-            onClick={onAction}
-            className="text-sm font-semibold underline"
-          >
+          <button type="button" onClick={onAction} className="text-sm font-semibold underline">
             {actionLabel}
           </button>
         )}
