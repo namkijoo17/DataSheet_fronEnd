@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CircleAlert, Info } from 'lucide-react';
 
 import { useAuthStore } from '@/features/auth/session/auth-store';
-import { consumeLogoutNotice } from '@/features/auth/session/logout-notice';
+import {
+  clearLogoutNotice,
+  peekLogoutNotice,
+} from '@/features/auth/session/logout-notice';
 import { ApiError } from '@/shared/api/client';
 import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
@@ -18,16 +21,20 @@ import { login } from '@/features/auth/api/auth-api';
 import { loginSchema, type LoginFormValues } from '../model/login-schema';
 import { BrandHeader } from './brand-header';
 
+function subscribeNothing() {
+  return () => {};
+}
+
 export function LoginForm() {
   const router = useRouter();
   const setSession = useAuthStore((state) => state.setSession);
   const [isLocked, setIsLocked] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLogoutNotice(consumeLogoutNotice());
-  }, []);
+  const logoutNotice = useSyncExternalStore(
+    subscribeNothing,
+    peekLogoutNotice,
+    () => null,
+  );
 
   const {
     register,
@@ -47,6 +54,7 @@ export function LoginForm() {
     try {
       const response = await login(values);
       setIsLocked(false);
+      clearLogoutNotice();
       setSession(response);
       router.push('/dashboard');
     } catch (error) {

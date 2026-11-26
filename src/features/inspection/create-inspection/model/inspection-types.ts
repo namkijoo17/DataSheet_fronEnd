@@ -1,4 +1,5 @@
 import type { InspectionModeId } from './inspection-modes';
+import type { NgAction } from './ng-actions';
 
 export type InspectionStatus = 'IN_PROGRESS' | 'COMPLETED';
 
@@ -27,6 +28,9 @@ export type InspectionAnswerPayload = {
   slotIndex: number | null;
   judgment: 'OK' | 'NG' | null;
   slotValues: Record<number, string>;
+  ngAction: NgAction | null;
+  /** yyyy-MM-ddTHH:mm:ss */
+  ngOccurredAt: string | null;
 };
 
 export type InspectionAnswerResponse = InspectionAnswerPayload & {
@@ -43,6 +47,22 @@ export type InspectionDetailResponse = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  result: InspectionResult | null;
+  okCount: number | null;
+  ngCount: number | null;
+  skipCount: number | null;
+  fileName: string | null;
+};
+
+export type InspectionResult = 'OK' | 'NG';
+
+export type InspectionCompletePayload = {
+  /** 입력값이 채워진 결과 PDF */
+  file: Blob;
+  fileName: string;
+  okCount: number;
+  ngCount: number;
+  skipCount: number;
 };
 
 export type InspectionSummaryResponse = {
@@ -50,9 +70,18 @@ export type InspectionSummaryResponse = {
   datasheetId: number;
   datasheetName: string;
   serialNo: string | null;
+  unit: string | null;
+  inspector: string | null;
   mode: InspectionModeId;
   status: InspectionStatus;
   answeredCount: number;
   totalCount: number;
+  result: InspectionResult | null;
+  okCount: number | null;
+  ngCount: number | null;
+  skipCount: number | null;
+  /** 저장된 결과 PDF 파일명 (없으면 null) */
+  fileName: string | null;
   updatedAt: string;
+  completedAt: string | null;
 };

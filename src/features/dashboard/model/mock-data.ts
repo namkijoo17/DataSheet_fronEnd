@@ -1,9 +1,3 @@
-export type DashboardSummary = {
-  inProgress: number;
-  completedToday: number;
-  pendingNg: number;
-};
-
 export type InProgressInspection = {
   id: string;
   model: string;
@@ -13,12 +7,6 @@ export type InProgressInspection = {
   totalCount: number;
   /** 이어하기 링크 (기본: /inspections/{id}) */
   href?: string;
-};
-
-export const MOCK_DASHBOARD_SUMMARY: DashboardSummary = {
-  inProgress: 3,
-  completedToday: 128,
-  pendingNg: 2,
 };
 
 export const MOCK_IN_PROGRESS_INSPECTIONS: InProgressInspection[] = [

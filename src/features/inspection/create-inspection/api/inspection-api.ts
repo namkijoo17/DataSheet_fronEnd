@@ -1,7 +1,8 @@
-import { apiClient } from '@/shared/api/client';
+import { apiClient, apiClientBlob, apiClientFormData } from '@/shared/api/client';
 
 import type {
   InspectionAnswerPayload,
+  InspectionCompletePayload,
   InspectionDetailResponse,
   InspectionStartPayload,
   InspectionStatus,
@@ -47,9 +48,24 @@ export function saveInspectionAnswer(
   });
 }
 
-export function completeInspection(id: number) {
-  return apiClient<InspectionDetailResponse>(`/api/inspections/${id}/complete`, {
-    method: 'POST',
+/** 검사를 완료하고 결과 PDF 를 파일 보관함에 저장 */
+export function completeInspection(id: number, payload: InspectionCompletePayload) {
+  const formData = new FormData();
+  formData.append('file', payload.file, payload.fileName);
+  formData.append('fileName', payload.fileName);
+  formData.append('okCount', String(payload.okCount));
+  formData.append('ngCount', String(payload.ngCount));
+  formData.append('skipCount', String(payload.skipCount));
+  return apiClientFormData<InspectionDetailResponse>(
+    `/api/inspections/${id}/complete`,
+    formData,
+  );
+}
+
+/** 저장된 결과 PDF */
+export function fetchInspectionFileBlob(id: number, download = false) {
+  return apiClientBlob(`/api/inspections/${id}/file?download=${download}`, {
+    method: 'GET',
   });
 }
 

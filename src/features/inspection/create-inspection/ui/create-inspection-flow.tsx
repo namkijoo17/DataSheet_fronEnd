@@ -9,6 +9,7 @@ import { useAuthStore } from '@/features/auth/session/auth-store';
 import {
   datasheetDetailQueryKey,
   fetchDatasheetDetail,
+  fetchDatasheetFileBlob,
   type DatasheetSummary,
 } from '@/features/settings';
 
@@ -30,13 +31,21 @@ import {
   toAnswerPayload,
   toBasicPayload,
 } from '../lib/inspection-mapping';
+import { renderFilledPdf } from '../lib/render-filled-pdf';
+import { buildResultFileName } from '../lib/result-file-name';
 import type { InspectionModeId } from '../model/inspection-modes';
 import type { InspectionDetailResponse } from '../model/inspection-types';
 import { useInspectionAutosave } from '../model/use-inspection-autosave';
-import { inProgressInspectionsQueryKey } from '../model/use-inspections';
+import {
+  completedInspectionsQueryKey,
+  inProgressInspectionsQueryKey,
+} from '../model/use-inspections';
 import { BasicInfoForm } from './basic-info-form';
 import { DatasheetPicker } from './datasheet-picker';
-import { InspectionCompleteConfirm } from './inspection-complete-confirm';
+import {
+  InspectionCompleteConfirm,
+  type InspectionConfirmResult,
+} from './inspection-complete-confirm';
 import { InspectionFillForm } from './inspection-fill-form';
 import { InspectionModeSelect } from './inspection-mode-select';
 
@@ -78,6 +87,7 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
   );
   const [starting, setStarting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [confirmingLabel, setConfirmingLabel] = useState('저장 중...');
 
   const answersRef = useRef(answers);
   const { queue, status: saveStatus } = useInspectionAutosave(inspectionId);
@@ -150,9 +160,10 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
     router.push('/dashboard');
   };
 
-  const handleConfirm = async () => {
-    if (inspectionId == null || confirming) return;
+  const handleConfirm = async (result: InspectionConfirmResult) => {
+    if (inspectionId == null || !datasheet || confirming) return;
     setConfirming(true);
+    setConfirmingLabel('저장 중...');
     try {
       const saved = (await queue?.flush(15000)) ?? true;
       if (!saved) {
@@ -164,10 +175,35 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
         window.alert(`일부 항목을 저장하지 못했습니다: ${failure}\n해당 항목을 다시 입력해 주세요.`);
         return;
       }
-      await completeInspection(inspectionId);
-      await refreshInProgress();
-      window.alert('검사를 저장했습니다.');
-      router.push('/dashboard');
+
+      // 원본 PDF 에 입력값을 입힌 결과 PDF 생성
+      setConfirmingLabel('PDF 생성 중...');
+      const source = await queryClient.fetchQuery({
+        queryKey: ['datasheet-file-blob', datasheet.id],
+        queryFn: () => fetchDatasheetFileBlob(datasheet.id),
+        staleTime: 5 * 60_000,
+      });
+      const file = await renderFilledPdf({
+        source,
+        overlays: result.overlays,
+        onProgress: (done, total) =>
+          setConfirmingLabel(`PDF 생성 중... (${done}/${total})`),
+      });
+
+      setConfirmingLabel('파일 보관함에 저장 중...');
+      await completeInspection(inspectionId, {
+        file,
+        fileName: buildResultFileName(basicValues),
+        okCount: result.ok,
+        ngCount: result.ng,
+        skipCount: result.skip,
+      });
+      await Promise.all([
+        refreshInProgress(),
+        queryClient.invalidateQueries({ queryKey: completedInspectionsQueryKey }),
+      ]);
+      window.alert('검사를 저장했습니다. 파일 보관함에서 확인할 수 있습니다.');
+      router.push('/archive');
     } catch (error) {
       window.alert(errorMessage(error, '검사를 완료하지 못했습니다.'));
     } finally {
@@ -268,8 +304,9 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
       mode={mode}
       answers={answers}
       confirming={confirming}
+      confirmingLabel={confirmingLabel}
       onBack={() => setStep('inspect')}
-      onConfirm={() => void handleConfirm()}
+      onConfirm={(result) => void handleConfirm(result)}
     />
   );
 }

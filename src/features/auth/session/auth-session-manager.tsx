@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 
 import {
@@ -15,6 +15,10 @@ import {
   IDLE_LOGOUT_MS,
 } from './session-constants';
 
+function subscribeHydration(onChange: () => void) {
+  return useAuthStore.persist.onFinishHydration(onChange);
+}
+
 /**
  * 메인 영역 세션 유지:
  * - 미로그인 시 로그인으로 이동
@@ -26,16 +30,12 @@ export function AuthSessionManager() {
   const user = useAuthStore((state) => state.user);
   const expiresAt = useAuthStore((state) => state.expiresAt);
   const clearSession = useAuthStore((state) => state.clearSession);
-  const [hydrated, setHydrated] = useState(false);
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    () => useAuthStore.persist.hasHydrated(),
+    () => false,
+  );
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const unsub = useAuthStore.persist.onFinishHydration(() => {
-      setHydrated(true);
-    });
-    setHydrated(useAuthStore.persist.hasHydrated());
-    return unsub;
-  }, []);
 
   useEffect(() => {
     if (!hydrated) return;

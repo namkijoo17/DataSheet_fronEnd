@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
+import dayjs from 'dayjs';
 
 import {
   normalizeDatasheetItems,
@@ -21,8 +22,11 @@ import {
 } from '../lib/inspection-answers';
 import type { SaveStatus } from '../lib/inspection-save-queue';
 import { isInspectionItem } from '../lib/inspection-sequence';
+import { buildNgEventInfo, isNgAnswer } from '../lib/ng-event';
 import type { InspectionModeId } from '../model/inspection-modes';
 import { INSPECTION_MODES } from '../model/inspection-modes';
+import type { NgAction } from '../model/ng-actions';
+import { NgOccurredDialog } from './ng-occurred-dialog';
 
 function listInspectionItems(items: DatasheetItem[]) {
   return items.filter(isInspectionItem).sort((a, b) => {
@@ -63,8 +67,19 @@ function patchAnswer(
 ): InspectionAnswers {
   return {
     ...answers,
-    [itemId]: { ...answers[itemId], ...patch, skipped: false },
+    // 값을 고치면 이전 NG 처리 이력은 무효 → 다시 NG면 처리 방법을 새로 선택
+    [itemId]: {
+      ...answers[itemId],
+      ...patch,
+      skipped: false,
+      ngAction: null,
+      ngOccurredAt: null,
+    },
   };
+}
+
+function nowStamp() {
+  return dayjs().format('YYYY-MM-DDTHH:mm:ss');
 }
 
 /** OK/NG 버튼 선택 시 배열 슬롯(OK/NG 좌표)이 있으면 slotIndex도 함께 맞춤 */
@@ -112,10 +127,14 @@ export function InspectionFillForm({
   startAtFirstUnanswered = false,
 }: InspectionFillFormProps) {
   const { data, isPending, isError, error, refetch } = useDatasheetDetail(datasheetId);
-  const [index, setIndex] = useState(0);
-  const positionedRef = useRef(!startAtFirstUnanswered);
+  const [rawIndex, setIndex] = useState(0);
+  const [positioned, setPositioned] = useState(!startAtFirstUnanswered);
   const [jumpOpen, setJumpOpen] = useState(false);
-  const [autoNext, setAutoNext] = useState(true);
+  const [autoNext] = useState(true);
+  /** NG 발생 팝업 (해당 항목과 발생 시각) */
+  const [ngOpen, setNgOpen] = useState<{ itemId: number; occurredAt: string } | null>(null);
+  /** 'NG 항목만 재검증'을 이미 선택한 항목 (같은 항목에서 다시 고를 수 없음) */
+  const [recheckedIds, setRecheckedIds] = useState<Set<number>>(() => new Set());
 
   const items = useMemo(
     () => listInspectionItems(normalizeDatasheetItems(data?.items ?? [])),
@@ -138,16 +157,20 @@ export function InspectionFillForm({
     return slot?.slotIndex ?? null;
   }, [data, unitLabel]);
 
-  useEffect(() => {
-    if (items.length === 0) return;
-    if (!positionedRef.current) {
-      positionedRef.current = true;
-      const firstOpen = items.findIndex((item) => !isItemAnswered(item, answers[item.id], mode));
-      setIndex(firstOpen === -1 ? items.length - 1 : firstOpen);
-      return;
-    }
-    if (index > items.length - 1) setIndex(items.length - 1);
-  }, [items, index, answers, mode]);
+  if (!positioned && items.length > 0) {
+    setPositioned(true);
+    // 필수 항목 중 미입력 첫 항목을 우선하고, 없으면 선택 항목 중 첫 미입력으로
+    const requiredOpen = items.findIndex(
+      (item) => item.required && !isItemAnswered(item, answers[item.id], mode),
+    );
+    const firstOpen =
+      requiredOpen !== -1
+        ? requiredOpen
+        : items.findIndex((item) => !isItemAnswered(item, answers[item.id], mode));
+    setIndex(firstOpen === -1 ? items.length - 1 : firstOpen);
+  }
+
+  const index = Math.min(rawIndex, Math.max(items.length - 1, 0));
 
   const current = items[index] ?? null;
   const prev = index > 0 ? items[index - 1] : null;
@@ -158,12 +181,71 @@ export function InspectionFillForm({
   const complete = isInspectionComplete(items, answers, mode);
   const modeTitle = INSPECTION_MODES.find((entry) => entry.id === mode)?.title ?? '검사';
 
-  const goNext = () => {
+  const openNgDialog = () => {
+    if (!current) return;
+    setNgOpen({ itemId: current.id, occurredAt: nowStamp() });
+  };
+
+  const finishOrWarn = () => {
+    if (complete) onComplete();
+    else window.alert('아직 입력하지 않은 항목이 있습니다.');
+  };
+
+  /** 현재 항목 처리를 마치고 다음 항목 / 완료로 */
+  const proceed = () => {
     if (index < items.length - 1) {
       setIndex(index + 1);
       return;
     }
-    if (complete) onComplete();
+    finishOrWarn();
+  };
+
+  const goNext = () => {
+    if (!current) return;
+
+    // NG 이고 처리 방법이 없거나(처음), 재검증을 골랐는데 여전히 NG(값을 못 고침)이면 처리 방법 선택
+    const ngAction = answer?.ngAction;
+    if ((!ngAction || ngAction === 'RECHECK') && isNgAnswer(current, answer, unitSlotIndex)) {
+      openNgDialog();
+      return;
+    }
+
+    proceed();
+  };
+
+  const handleNgConfirm = (action: NgAction) => {
+    if (!ngOpen) return;
+    const item = items.find((entry) => entry.id === ngOpen.itemId);
+    if (!item) return;
+
+    const nextAnswers: InspectionAnswers = {
+      ...answers,
+      [item.id]: { ...answers[item.id], ngAction: action, ngOccurredAt: ngOpen.occurredAt },
+    };
+    onChange(nextAnswers);
+    setNgOpen(null);
+
+    // 검사 종료 및 부적합 등록: 남은 항목과 무관하게 바로 검사를 종료(완료 확인 화면)
+    if (action === 'END') {
+      onComplete();
+      return;
+    }
+    if (action === 'RECHECK') {
+      // 다음으로 넘어가지 않고 이 항목을 바로 다시 확인한다 (값을 고치면 이력이 초기화됨)
+      setRecheckedIds((prevSet) => new Set(prevSet).add(item.id));
+      return;
+    }
+    // CONTINUE
+    proceed();
+  };
+
+  /** 팝업에서 '재검사': 현재 항목 값을 지우고 다시 입력 */
+  const handleNgRecheck = () => {
+    if (!ngOpen) return;
+    const nextAnswers = { ...answers };
+    delete nextAnswers[ngOpen.itemId];
+    onChange(nextAnswers);
+    setNgOpen(null);
   };
 
   const goPrev = () => {
@@ -209,6 +291,22 @@ export function InspectionFillForm({
   if (!current) {
     return <CenterMessage text="검사 항목이 없습니다." onBack={onBack} />;
   }
+
+  const ngItem = ngOpen ? items.find((entry) => entry.id === ngOpen.itemId) ?? null : null;
+  const isLastItem = index >= items.length - 1;
+  const rechecking = answer?.ngAction === 'RECHECK';
+  // 선택 항목을 비워 둔 채 넘어가는 경우 버튼 문구로 알려준다
+  const skippingOptional =
+    !current.required && !isItemAnswered(current, answer, mode) && !rechecking;
+  const nextButtonLabel = rechecking
+    ? '재검증 확인'
+    : isLastItem
+      ? skippingOptional
+        ? '비우고 완료'
+        : '완료'
+      : skippingOptional
+        ? '비우고 다음'
+        : '다음 항목';
 
   const range = resolveItemRange(current, unitSlotIndex);
   const rangeHint = formatRangeHint(current, unitSlotIndex);
@@ -297,6 +395,11 @@ export function InspectionFillForm({
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 md:px-8 md:py-5">
         <div className="mx-auto w-full max-w-[860px] space-y-3 md:space-y-5">
+          {rechecking && (
+            <p className="rounded-xl bg-[#fffbeb] px-4 py-3 text-sm font-semibold text-[#b45309] md:text-base">
+              NG 재검증 중 · 값을 다시 확인해 수정한 뒤 하단 버튼을 누르세요.
+            </p>
+          )}
           {/* Prev / Next cards */}
           <div className="grid grid-cols-2 gap-2 md:gap-4">
             <button
@@ -353,6 +456,11 @@ export function InspectionFillForm({
               {' · '}
               {index + 1} / {items.length}
               {unitLabel ? ` · ${unitLabel}` : ''}
+              {!current.required && (
+                <span className="ml-2 rounded bg-[#f1f3f5] px-1.5 py-0.5 text-[11px] font-bold text-[#5f6368] md:text-sm">
+                  선택 입력
+                </span>
+              )}
             </p>
             <h2 className="mt-1 text-xl font-bold leading-snug text-[#1f1f1f] md:mt-2 md:text-3xl md:leading-snug">
               {current.label}
@@ -558,7 +666,10 @@ export function InspectionFillForm({
                 </button>
                 <button
                   type="button"
-                  onClick={() => updateCurrent(judgmentPatch(current, 'NG', answer))}
+                  onClick={() => {
+                    updateCurrent(judgmentPatch(current, 'NG', answer));
+                    openNgDialog();
+                  }}
                   className={cn(
                     'h-14 rounded-2xl border-2 text-lg font-bold transition-colors md:h-[72px] md:text-3xl',
                     effectiveJudgment === 'NG'
@@ -616,17 +727,10 @@ export function InspectionFillForm({
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (index >= items.length - 1) {
-                if (complete) onComplete();
-                else window.alert('아직 입력하지 않은 항목이 있습니다.');
-                return;
-              }
-              goNext();
-            }}
+            onClick={goNext}
             className="h-12 rounded-xl bg-[#3c3c3c] text-sm font-bold text-white md:h-16 md:text-xl"
           >
-            {index >= items.length - 1 ? '완료' : '다음 항목'}
+            {nextButtonLabel}
           </button>
         </div>
       </div>
@@ -672,7 +776,7 @@ export function InspectionFillForm({
                           done ? 'text-[#166534]' : 'text-[#9aa0a6]',
                         )}
                       >
-                        {done ? '완료' : '미입력'}
+                        {done ? '완료' : item.required ? '미입력' : '선택 · 미입력'}
                       </span>
                     </button>
                   </li>
@@ -681,6 +785,17 @@ export function InspectionFillForm({
             </ul>
           </div>
         </div>
+      )}
+
+      {ngOpen && ngItem && (
+        <NgOccurredDialog
+          key={`${ngOpen.itemId}-${ngOpen.occurredAt}`}
+          info={buildNgEventInfo(ngItem, answers[ngItem.id], unitSlotIndex)}
+          occurredAt={ngOpen.occurredAt.replace('T', ' ')}
+          disabledActions={recheckedIds.has(ngItem.id) ? ['RECHECK'] : []}
+          onRecheck={handleNgRecheck}
+          onConfirm={handleNgConfirm}
+        />
       )}
     </div>
   );

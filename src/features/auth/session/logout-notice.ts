@@ -13,10 +13,20 @@ export function setLogoutNotice(reason: LogoutReason) {
   sessionStorage.setItem(STORAGE_KEY, reason);
 }
 
-export function consumeLogoutNotice(): string | null {
+export function peekLogoutNotice(): string | null {
   if (typeof window === 'undefined') return null;
   const reason = sessionStorage.getItem(STORAGE_KEY) as LogoutReason | null;
   if (!reason) return null;
-  sessionStorage.removeItem(STORAGE_KEY);
   return MESSAGES[reason] ?? null;
+}
+
+export function clearLogoutNotice() {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(STORAGE_KEY);
+}
+
+export function consumeLogoutNotice(): string | null {
+  const message = peekLogoutNotice();
+  clearLogoutNotice();
+  return message;
 }

@@ -1,7 +1,7 @@
-import type { DashboardSummary } from '../model/mock-data';
+import type { DashboardStats } from '../model/use-dashboard-stats';
 
 type SummaryStatsProps = {
-  summary: DashboardSummary;
+  summary: DashboardStats;
 };
 
 export function SummaryStats({ summary }: SummaryStatsProps) {
@@ -20,7 +20,7 @@ function StatCard({
   emphasize = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   emphasize?: boolean;
 }) {
   return (
@@ -39,8 +39,8 @@ function StatCard({
             : 'mt-2 text-2xl font-bold tracking-tight text-[#1f1f1f] md:text-3xl'
         }
       >
-        {value}
-        <span className="ml-1 text-base font-semibold md:text-lg">건</span>
+        {value ?? '-'}
+        {value != null && <span className="ml-1 text-base font-semibold md:text-lg">건</span>}
       </p>
     </div>
   );

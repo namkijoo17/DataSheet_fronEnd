@@ -2,6 +2,7 @@ import type { DatasheetItem } from '@/features/settings';
 import { resolveItemRange } from '@/features/settings';
 
 import type { InspectionModeId } from '../model/inspection-modes';
+import type { NgAction } from '../model/ng-actions';
 
 export type InspectionAnswer = {
   skipped?: boolean;
@@ -13,6 +14,10 @@ export type InspectionAnswer = {
   slotValues?: Record<number, string>;
   /** 수동/자동 판정 */
   judgment?: 'OK' | 'NG' | null;
+  /** NG 발생 시 선택한 처리 방법 */
+  ngAction?: NgAction | null;
+  /** NG 발생 시각 (yyyy-MM-ddTHH:mm:ss) */
+  ngOccurredAt?: string | null;
 };
 
 export type InspectionAnswers = Record<number, InspectionAnswer>;
@@ -90,14 +95,10 @@ export function isInspectionComplete(
   answers: InspectionAnswers,
   mode: InspectionModeId,
 ) {
-  return items.every((item) => {
-    if (!item.required) {
-      const answer = answers[item.id];
-      if (!answer) return true;
-      return isItemAnswered(item, answer, mode);
-    }
-    return isItemAnswered(item, answers[item.id], mode);
-  });
+  // 필수가 아닌 항목은 비워 두거나 입력을 지워도 완료를 막지 않는다
+  return items.every(
+    (item) => !item.required || isItemAnswered(item, answers[item.id], mode),
+  );
 }
 
 export function judgeNumberDetail(

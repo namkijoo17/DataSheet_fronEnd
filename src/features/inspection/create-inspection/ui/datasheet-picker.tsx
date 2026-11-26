@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 import { Input } from '@/shared/ui/input';
 import { cn } from '@/shared/lib/utils';
-import { formatRevision, useDatasheets, type DatasheetSummary } from '@/features/settings';
+import { useDatasheets, type DatasheetSummary } from '@/features/settings';
 
 type DatasheetPickerProps = {
   onSelect: (sheet: DatasheetSummary) => void;

@@ -18,6 +18,8 @@ import {
   resolveUnitSlotIndex,
   summarizeResults,
 } from '../lib/build-inspection-overlays';
+import type { InspectionOverlay } from '../lib/build-inspection-overlays';
+import { buildResultFileName } from '../lib/result-file-name';
 import type { InspectionModeId } from '../model/inspection-modes';
 import { InspectionFilledPdfViewer } from './inspection-filled-pdf-viewer';
 
@@ -27,9 +29,19 @@ type InspectionCompleteConfirmProps = {
   mode: InspectionModeId;
   answers: InspectionAnswers;
   onBack: () => void;
-  onConfirm: () => void;
+  onConfirm: (result: InspectionConfirmResult) => void;
   /** 저장 요청 진행 중 */
   confirming?: boolean;
+  /** 저장 진행 중 버튼에 보여줄 문구 */
+  confirmingLabel?: string;
+};
+
+/** 완료 확정 시 상위로 넘기는 결과 (오버레이는 결과 PDF 생성에 사용) */
+export type InspectionConfirmResult = {
+  overlays: InspectionOverlay[];
+  ok: number;
+  ng: number;
+  skip: number;
 };
 
 export function InspectionCompleteConfirm({
@@ -40,6 +52,7 @@ export function InspectionCompleteConfirm({
   onBack,
   onConfirm,
   confirming = false,
+  confirmingLabel = '저장 중...',
 }: InspectionCompleteConfirmProps) {
   const { data, isPending, isError, error, refetch } = useDatasheetDetail(datasheet.id);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -103,7 +116,7 @@ export function InspectionCompleteConfirm({
     );
   }
 
-  const fileHint = `\\\\QA-NAS\\검사\\${basic.inspectDate.slice(0, 4)}\\${basic.inspectDate.slice(5, 7)}\\${basic.unit || 'UNIT'}_${basic.serialNo || 'SERIAL'}_${basic.inspectDate.replaceAll('-', '')}.pdf`;
+  const fileHint = `저장 파일: ${buildResultFileName(basic)} · 파일 보관함에서 확인할 수 있습니다.`;
 
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[#f4f6f8]">
@@ -283,11 +296,18 @@ export function InspectionCompleteConfirm({
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() =>
+              onConfirm({
+                overlays,
+                ok: summary.ok,
+                ng: summary.ng,
+                skip: summary.skip,
+              })
+            }
             disabled={confirming}
             className="h-12 rounded-xl bg-[#3c3c3c] text-sm font-bold text-white disabled:opacity-60"
           >
-            {confirming ? '저장 중...' : '완료 확정 및 저장'}
+            {confirming ? confirmingLabel : '완료 확정 및 저장'}
           </button>
         </div>
       </div>

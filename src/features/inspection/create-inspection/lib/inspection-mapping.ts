@@ -56,6 +56,8 @@ export function toAnswerPayload(
     slotIndex: answer?.slotIndex ?? null,
     judgment: answer?.judgment ?? null,
     slotValues: answer?.slotValues ?? {},
+    ngAction: answer?.ngAction ?? null,
+    ngOccurredAt: answer?.ngOccurredAt ?? null,
   };
 }
 
@@ -75,6 +77,8 @@ export function fromAnswersResponse(
       slotIndex: answer.slotIndex,
       judgment: answer.judgment,
       slotValues: Object.keys(slotValues).length > 0 ? slotValues : undefined,
+      ngAction: answer.ngAction,
+      ngOccurredAt: answer.ngOccurredAt,
     };
   }
   return result;

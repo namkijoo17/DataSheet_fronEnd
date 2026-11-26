@@ -2,8 +2,28 @@ export { CreateInspectionFlow } from './ui/create-inspection-flow';
 export { ResumeInspection } from './ui/resume-inspection';
 export {
   useInProgressInspections,
+  useCompletedInspections,
   inProgressInspectionsQueryKey,
+  completedInspectionsQueryKey,
 } from './model/use-inspections';
+export {
+  fetchInspectionDetail,
+  fetchInspectionFileBlob,
+} from './api/inspection-api';
+export {
+  buildInspectionResultRows,
+  resolveUnitSlotIndex,
+  summarizeResults,
+  type InspectionResultRow,
+} from './lib/build-inspection-overlays';
+export {
+  fromAnswersResponse,
+  fromBasicPayload,
+} from './lib/inspection-mapping';
+export { isInspectionItem } from './lib/inspection-sequence';
+export { countUnresolvedNg } from './lib/unresolved-ng';
+export { buildNgEventInfo, isNgAnswer } from './lib/ng-event';
+export { NG_ACTION_OPTIONS } from './model/ng-actions';
 export type {
   InspectionSummaryResponse,
   InspectionDetailResponse,

@@ -268,14 +268,22 @@ export const DatasheetItemEditor = forwardRef<
   },
   ref,
 ) {
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [error, setError] = useState<string | null>(null);
-  const [hasDrawn, setHasDrawn] = useState(false);
-  const [drawnSlotIndexes, setDrawnSlotIndexes] = useState<Set<number>>(
-    () => new Set(),
+  const [form, setForm] = useState<FormState>(() =>
+    !creating && item ? fromItem(item, siblingItems) : emptyForm(),
   );
+  const [error, setError] = useState<string | null>(null);
+  const [hasDrawn, setHasDrawn] = useState(() => !creating && item != null);
+  const [drawnSlotIndexes, setDrawnSlotIndexes] = useState<Set<number>>(() =>
+    !creating && item
+      ? new Set((item.slots ?? []).map((_, index) => index))
+      : new Set(),
+  );
+  const [syncedSource, setSyncedSource] = useState({ creating, item });
   const formRef = useRef(form);
-  formRef.current = form;
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   const rangeSourceItems = siblingItems.filter(
     (entry) =>
@@ -284,15 +292,15 @@ export const DatasheetItemEditor = forwardRef<
       (item == null || entry.id !== item.id),
   );
 
-  useEffect(() => {
+  // 추가/선택 항목이 바뀌면 폼을 다시 맞춤
+  if (syncedSource.creating !== creating || syncedSource.item !== item) {
+    setSyncedSource({ creating, item });
     if (creating) {
       setForm(emptyForm());
       setError(null);
       setHasDrawn(false);
       setDrawnSlotIndexes(new Set());
-      return;
-    }
-    if (item) {
+    } else if (item) {
       setForm(fromItem(item, siblingItems));
       setError(null);
       setHasDrawn(true);
@@ -300,7 +308,7 @@ export const DatasheetItemEditor = forwardRef<
         new Set((item.slots ?? []).map((_, index) => index)),
       );
     }
-  }, [creating, item, siblingItems]);
+  }
 
   useEffect(() => {
     if (!onDraftRegionChange) return;
@@ -325,8 +333,11 @@ export const DatasheetItemEditor = forwardRef<
     }
 
     const region = toPdfRegion(target, pageWidth, pageHeight);
+    const slotLabel = form.array
+      ? form.slots[form.activeSlotIndex]?.label
+      : undefined;
     const label = form.array
-      ? `${form.label || '새 항목'} · ${target.label ?? `슬롯${form.activeSlotIndex + 1}`}`
+      ? `${form.label || '새 항목'} · ${slotLabel ?? `슬롯${form.activeSlotIndex + 1}`}`
       : form.label || '새 항목';
     onDraftRegionChange(region, label);
   }, [

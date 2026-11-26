@@ -16,7 +16,6 @@ import {
   countFilledParts,
   DEFAULT_UNIT_OPTIONS,
   emptyBasicInfoValues,
-  isBasicInfoComplete,
   PART_NUMBER_SLOTS,
   type BasicInfoFormValues,
   type PartNumberSlot,
@@ -71,7 +70,7 @@ export function BasicInfoForm({ datasheet, values, onChange, onBack, onNext }: B
   }, [unitOptions.join('|')]);
 
   const partProgress = countFilledParts(values);
-  const canNext = isBasicInfoComplete(values, user?.name ?? '');
+  // const canNext = isBasicInfoComplete(values, user?.name ?? '');
 
   const patch = (partial: Partial<BasicInfoFormValues>) => onChange({ ...values, ...partial });
 

@@ -9,6 +9,7 @@ import { fetchDatasheetFileBlob } from '@/features/settings';
 import { ensurePdfjsWorker } from '@/features/settings/lib/pdfjs';
 
 import type { InspectionOverlay } from '../lib/build-inspection-overlays';
+import { computeOverlayFontPx } from '../lib/overlay-text';
 
 type ViewerSize = { width: number; height: number };
 
@@ -33,10 +34,20 @@ export function InspectionFilledPdfViewer({
 }: InspectionFilledPdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onReadyPagesRef = useRef(onReadyPages);
-  onReadyPagesRef.current = onReadyPages;
 
-  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
-  const [docError, setDocError] = useState(false);
+  useEffect(() => {
+    onReadyPagesRef.current = onReadyPages;
+  }, [onReadyPages]);
+
+  const [loadedDoc, setLoadedDoc] = useState<{
+    blob: Blob;
+    fixedPage: number | undefined;
+    doc: PDFDocumentProxy;
+  } | null>(null);
+  const [failedLoad, setFailedLoad] = useState<{
+    blob: Blob;
+    fixedPage: number | undefined;
+  } | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [viewerSize, setViewerSize] = useState<ViewerSize>({
     width: 0,
@@ -99,8 +110,6 @@ export function InspectionFilledPdfViewer({
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     let doc: PDFDocumentProxy | null = null;
 
-    setDocError(false);
-    setPdfDoc(null);
     ensurePdfjsWorker();
 
     void (async () => {
@@ -114,12 +123,12 @@ export function InspectionFilledPdfViewer({
           await loadingTask.destroy();
           return;
         }
-        setPdfDoc(doc);
+        setLoadedDoc({ blob, fixedPage, doc });
         setPageCount(doc.numPages);
         if (fixedPage == null) setPage(1);
         onReadyPagesRef.current?.(doc.numPages);
       } catch {
-        if (!cancelled) setDocError(true);
+        if (!cancelled) setFailedLoad({ blob, fixedPage });
       }
     })();
 
@@ -140,6 +149,12 @@ export function InspectionFilledPdfViewer({
     };
   }, [blob, fixedPage]);
 
+  const pdfDoc =
+    blob && loadedDoc?.blob === blob && loadedDoc.fixedPage === fixedPage
+      ? loadedDoc.doc
+      : null;
+  const docError =
+    !!blob && failedLoad?.blob === blob && failedLoad.fixedPage === fixedPage;
   const pageOverlays = overlays.filter((mark) => mark.page === activePage);
   const loading = blobPending || (!!blob && !pdfDoc && !docError);
   const error = blobError || docError;
@@ -182,6 +197,7 @@ export function InspectionFilledPdfViewer({
                   : Math.max(renderWidth - 24, 1)
               }
               overlays={pageOverlays}
+              compact={compact}
               fitHeight={
                 compact
                   ? Math.max(viewerSize.height || renderWidth * 1.35, 1) - 8
@@ -241,22 +257,28 @@ function FilledPage({
   viewerWidth,
   fitHeight,
   overlays,
+  compact,
 }: {
   pdfDoc: PDFDocumentProxy;
   pageNumber: number;
   viewerWidth: number;
   fitHeight: number | null;
   overlays: InspectionOverlay[];
+  compact: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [rendered, setRendered] = useState(false);
+  const renderKey = `${pageNumber}|${viewerWidth}|${fitHeight ?? ''}`;
+  const [renderedFor, setRenderedFor] = useState<{
+    doc: PDFDocumentProxy;
+    key: string;
+  } | null>(null);
+  const rendered = renderedFor?.doc === pdfDoc && renderedFor.key === renderKey;
 
   useEffect(() => {
     let cancelled = false;
     let renderTask: { cancel: () => void; promise: Promise<unknown> } | null =
       null;
-    setRendered(false);
 
     async function renderPage(attempt = 0) {
       const canvas = canvasRef.current;
@@ -296,7 +318,7 @@ function FilledPage({
 
         if (!cancelled) {
           setSize({ width: displayWidth, height: displayHeight });
-          setRendered(true);
+          setRenderedFor({ doc: pdfDoc, key: renderKey });
         }
       } catch {
         if (!cancelled && attempt < 3) {
@@ -314,7 +336,7 @@ function FilledPage({
         // ignore
       }
     };
-  }, [pdfDoc, pageNumber, viewerWidth, fitHeight]);
+  }, [pdfDoc, pageNumber, viewerWidth, fitHeight, renderKey]);
 
   return (
     <div
@@ -328,13 +350,39 @@ function FilledPage({
       <canvas ref={canvasRef} className="pointer-events-none block" />
       {rendered &&
         overlays.map((mark) => (
-          <OverlayMarkView key={mark.id} mark={mark} />
+          <OverlayMarkView key={mark.id} mark={mark} pageSize={size} compact={compact} />
         ))}
     </div>
   );
 }
 
-function OverlayMarkView({ mark }: { mark: InspectionOverlay }) {
+/**
+ * 오버레이 글자 크기.
+ * - 썸네일(compact): 기존처럼 화면 너비 기준 고정 범위
+ * - 크게 보기: 칸 높이에 비례하고, 칸 너비를 약간만 넘도록 제한 → 확대해도 칸 대비 비율 유지
+ */
+function resolveTextFontSize(
+  text: string,
+  region: InspectionOverlay['region'],
+  pageSize: { width: number; height: number },
+  compact: boolean,
+) {
+  if (compact || !pageSize.width || !pageSize.height) {
+    return 'clamp(9px, 1.6vw, 14px)';
+  }
+  const size = computeOverlayFontPx(text, region, pageSize, { min: 8, max: 48 });
+  return `${size.toFixed(1)}px`;
+}
+
+function OverlayMarkView({
+  mark,
+  pageSize,
+  compact,
+}: {
+  mark: InspectionOverlay;
+  pageSize: { width: number; height: number };
+  compact: boolean;
+}) {
   const { region, kind, text } = mark;
   const style = {
     left: `${region.x}%`,
@@ -380,7 +428,10 @@ function OverlayMarkView({ mark }: { mark: InspectionOverlay }) {
       className="pointer-events-none absolute flex items-center overflow-visible"
       style={style}
     >
-      <span className="whitespace-nowrap text-[clamp(9px,1.6vw,14px)] font-bold leading-none text-[#2563eb]">
+      <span
+        className="whitespace-nowrap font-bold leading-none text-[#2563eb]"
+        style={{ fontSize: resolveTextFontSize(text ?? '', region, pageSize, compact) }}
+      >
         {text}
       </span>
     </div>
