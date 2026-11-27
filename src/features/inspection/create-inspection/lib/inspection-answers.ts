@@ -31,7 +31,8 @@ export function isItemAnswered(
   answer: InspectionAnswer | undefined,
   mode: InspectionModeId,
 ): boolean {
-  if (mode === 'PARTS_SHIPPING' && item.skippable && answer?.skipped) {
+  // SKIP 으로 표시된 항목(디버깅 모드의 미선택 포함)은 처리가 끝난 것으로 본다
+  if (mode !== 'BASIC' && answer?.skipped) {
     return true;
   }
   if (!answer || answer.skipped) return false;
@@ -95,10 +96,12 @@ export function isInspectionComplete(
   answers: InspectionAnswers,
   mode: InspectionModeId,
 ) {
-  // 필수가 아닌 항목은 비워 두거나 입력을 지워도 완료를 막지 않는다
-  return items.every(
-    (item) => !item.required || isItemAnswered(item, answers[item.id], mode),
-  );
+  // 필수가 아닌 항목은 비워 두거나 입력을 지워도 완료를 막지 않는다.
+  // 디버깅 모드에서는 선택한 항목이 곧 해야 할 항목이므로 모두 입력해야 한다.
+  return items.every((item) => {
+    const mustAnswer = item.required || mode === 'DEBUG';
+    return !mustAnswer || isItemAnswered(item, answers[item.id], mode);
+  });
 }
 
 export function judgeNumberDetail(

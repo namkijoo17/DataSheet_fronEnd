@@ -4,6 +4,8 @@ import type {
   InspectionAnswerPayload,
   InspectionCompletePayload,
   InspectionDetailResponse,
+  InspectionRecheckPayload,
+  InspectionRecheckResponse,
   InspectionStartPayload,
   InspectionStatus,
   InspectionSummaryResponse,
@@ -46,6 +48,18 @@ export function saveInspectionAnswer(
     method: 'PUT',
     body: JSON.stringify(body),
   });
+}
+
+/** 항목 재검사 사유를 기록한다 (서버에 저장된 해당 항목 답변도 함께 지워진다) */
+export function recordInspectionRecheck(
+  id: number,
+  itemId: number,
+  body: InspectionRecheckPayload,
+) {
+  return apiClient<InspectionRecheckResponse>(
+    `/api/inspections/${id}/rechecks/${itemId}`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
 }
 
 /** 검사를 완료하고 결과 PDF 를 파일 보관함에 저장 */

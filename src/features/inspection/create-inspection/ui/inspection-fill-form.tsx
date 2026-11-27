@@ -22,11 +22,13 @@ import {
 } from '../lib/inspection-answers';
 import type { SaveStatus } from '../lib/inspection-save-queue';
 import { isInspectionItem } from '../lib/inspection-sequence';
+import { summarizeAnswerForLog } from '../lib/answer-summary';
 import { buildNgEventInfo, isNgAnswer } from '../lib/ng-event';
 import type { InspectionModeId } from '../model/inspection-modes';
 import { INSPECTION_MODES } from '../model/inspection-modes';
 import type { NgAction } from '../model/ng-actions';
 import { NgOccurredDialog } from './ng-occurred-dialog';
+import { RecheckReasonDialog } from './recheck-reason-dialog';
 
 function listInspectionItems(items: DatasheetItem[]) {
   return items.filter(isInspectionItem).sort((a, b) => {
@@ -47,6 +49,13 @@ type InspectionFillFormProps = {
   onComplete: () => void;
   /** 보류: 저장된 상태로 검사를 나간다 */
   onHold?: () => void;
+  /** 항목 재검사 사유를 서버에 기록한다. 실패하면 throw (재검사는 진행되지 않음) */
+  onRecheckReason: (payload: {
+    itemId: number;
+    itemLabel: string;
+    reason: string;
+    previousSummary: string | null;
+  }) => Promise<void>;
   /** 서버 저장 상태 표시 */
   saveStatus?: SaveStatus;
   /** 이어하기: 처음 열 때 첫 미입력 항목으로 이동 */
@@ -123,6 +132,7 @@ export function InspectionFillForm({
   onBack,
   onComplete,
   onHold,
+  onRecheckReason,
   saveStatus = 'idle',
   startAtFirstUnanswered = false,
 }: InspectionFillFormProps) {
@@ -133,13 +143,26 @@ export function InspectionFillForm({
   const [autoNext] = useState(true);
   /** NG 발생 팝업 (해당 항목과 발생 시각) */
   const [ngOpen, setNgOpen] = useState<{ itemId: number; occurredAt: string } | null>(null);
+  /** 재검사 사유 입력 팝업 */
+  const [recheckOpen, setRecheckOpen] = useState(false);
+  const [recheckSaving, setRecheckSaving] = useState(false);
   /** 'NG 항목만 재검증'을 이미 선택한 항목 (같은 항목에서 다시 고를 수 없음) */
   const [recheckedIds, setRecheckedIds] = useState<Set<number>>(() => new Set());
 
-  const items = useMemo(
+  const allItems = useMemo(
     () => listInspectionItems(normalizeDatasheetItems(data?.items ?? [])),
     [data],
   );
+  // 디버깅 모드: 고르지 않은 항목(SKIP)은 검사 순서에서 뺀다
+  const items = useMemo(
+    () =>
+      mode === 'DEBUG'
+        ? allItems.filter((item) => !answers[item.id]?.skipped)
+        : allItems,
+    [allItems, mode, answers],
+  );
+  /** 필수가 아니어서 비워 둘 수 있는 항목 (디버깅 모드는 고른 항목이 모두 대상) */
+  const isOptionalItem = (item: DatasheetItem) => !item.required && mode !== 'DEBUG';
 
   const unitSlotIndex = useMemo(() => {
     const all = normalizeDatasheetItems(data?.items ?? []);
@@ -252,11 +275,41 @@ export function InspectionFillForm({
     if (index > 0) setIndex(index - 1);
   };
 
-  const resetCurrent = () => {
+  /** 현재 항목의 입력값을 지운다 */
+  const clearCurrentAnswer = () => {
     if (!current) return;
     const nextAnswers = { ...answers };
     delete nextAnswers[current.id];
     onChange(nextAnswers);
+  };
+
+  /** 하단 '재검사': 지울 입력값이 있으면 사유를 먼저 받는다 */
+  const resetCurrent = () => {
+    if (!current) return;
+    if (summarizeAnswerForLog(current, answer) != null) {
+      setRecheckOpen(true);
+      return;
+    }
+    clearCurrentAnswer();
+  };
+
+  const submitRecheck = async (reason: string) => {
+    if (!current) return;
+    setRecheckSaving(true);
+    try {
+      await onRecheckReason({
+        itemId: current.id,
+        itemLabel: current.label,
+        reason,
+        previousSummary: summarizeAnswerForLog(current, answer),
+      });
+      clearCurrentAnswer();
+      setRecheckOpen(false);
+    } catch {
+      // 저장 실패 안내는 상위에서 처리했다. 사유 창은 열어 둔 채 다시 시도하게 한다.
+    } finally {
+      setRecheckSaving(false);
+    }
   };
 
   const updateCurrent = (patch: Partial<InspectionAnswer>) => {
@@ -297,7 +350,7 @@ export function InspectionFillForm({
   const rechecking = answer?.ngAction === 'RECHECK';
   // 선택 항목을 비워 둔 채 넘어가는 경우 버튼 문구로 알려준다
   const skippingOptional =
-    !current.required && !isItemAnswered(current, answer, mode) && !rechecking;
+    isOptionalItem(current) && !isItemAnswered(current, answer, mode) && !rechecking;
   const nextButtonLabel = rechecking
     ? '재검증 확인'
     : isLastItem
@@ -456,7 +509,7 @@ export function InspectionFillForm({
               {' · '}
               {index + 1} / {items.length}
               {unitLabel ? ` · ${unitLabel}` : ''}
-              {!current.required && (
+              {isOptionalItem(current) && (
                 <span className="ml-2 rounded bg-[#f1f3f5] px-1.5 py-0.5 text-[11px] font-bold text-[#5f6368] md:text-sm">
                   선택 입력
                 </span>
@@ -682,7 +735,38 @@ export function InspectionFillForm({
               </div>
             )}
 
-            {mode === 'PARTS_SHIPPING' && current.skippable && (
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom */}
+      <div className="shrink-0 border-t border-[#e8eaed] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-8 md:py-4">
+        {/* 부품출하 모드: 스킵 가능 항목만 사용자가 의도적으로 SKIP 표시 (하단에 항상 노출) */}
+        {mode === 'PARTS_SHIPPING' && (
+          <div className="mx-auto mb-2 w-full max-w-[860px] md:mb-3">
+            {!current.skippable ? (
+              <p className="rounded-xl bg-[#fafbfc] px-4 py-2.5 text-center text-xs text-[#8b8f96] md:text-sm">
+                스킵 불가 항목입니다 · 스킵하려면 데이터시트 설정에서 &lsquo;스킵 가능&rsquo;을 켜세요
+              </p>
+            ) : answer?.skipped ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-[#f5f6f7] px-4 py-2.5 md:rounded-2xl md:px-6 md:py-4">
+                <p className="text-sm font-semibold text-[#5f6368] md:text-lg">
+                  SKIP 으로 표시된 항목입니다
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // 해당 항목 답변을 지워 다시 입력 가능하게 한다
+                    const next = { ...answers };
+                    delete next[current.id];
+                    onChange(next);
+                  }}
+                  className="h-9 shrink-0 rounded-lg border border-[#d8dce3] bg-white px-3 text-sm font-semibold text-[#1f1f1f] md:h-11 md:text-base"
+                >
+                  SKIP 해제
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
                 onClick={() => {
@@ -691,17 +775,13 @@ export function InspectionFillForm({
                     [current.id]: { skipped: true },
                   });
                 }}
-                className="w-full rounded-xl bg-[#f5f6f7] py-3 text-sm font-semibold text-[#5f6368] md:py-5 md:text-lg"
+                className="h-12 w-full rounded-xl bg-[#f5f6f7] text-sm font-bold text-[#5f6368] md:h-16 md:rounded-2xl md:text-lg"
               >
                 이 항목 SKIP
               </button>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Bottom */}
-      <div className="shrink-0 border-t border-[#e8eaed] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-8 md:py-4">
+        )}
         <div className="mx-auto grid w-full max-w-[860px] grid-cols-4 gap-2 md:grid-cols-[1fr_1.2fr_1fr_1.6fr] md:gap-3">
           <button
             type="button"
@@ -776,7 +856,7 @@ export function InspectionFillForm({
                           done ? 'text-[#166534]' : 'text-[#9aa0a6]',
                         )}
                       >
-                        {done ? '완료' : item.required ? '미입력' : '선택 · 미입력'}
+                        {done ? '완료' : isOptionalItem(item) ? '선택 · 미입력' : '미입력'}
                       </span>
                     </button>
                   </li>
@@ -786,6 +866,14 @@ export function InspectionFillForm({
           </div>
         </div>
       )}
+
+      <RecheckReasonDialog
+        open={recheckOpen}
+        itemLabel={current.label}
+        saving={recheckSaving}
+        onCancel={() => setRecheckOpen(false)}
+        onSubmit={(reason) => void submitRecheck(reason)}
+      />
 
       {ngOpen && ngItem && (
         <NgOccurredDialog

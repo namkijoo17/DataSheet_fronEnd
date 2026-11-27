@@ -117,7 +117,7 @@ export function ArchiveList() {
   const showFolderFiles = !searching && currentFolder != null;
 
   return (
-    <section className="mx-auto w-full max-w-3xl space-y-4">
+    <section className="w-full space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#1f1f1f]">파일 보관함</h1>

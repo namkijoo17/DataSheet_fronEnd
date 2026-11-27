@@ -85,6 +85,8 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
     if (selection.kind === 'item') {
       const item = items.find((entry) => entry.id === selection.itemId);
       if (!item) return null;
+      // 하위 슬롯이 있는 상위 항목은 PDF 위치가 없다 (슬롯을 눌러야 표시)
+      if (item.slots && item.slots.length > 0) return null;
       return {
         label: item.label,
         region: getItemPdfRegion(item, data),
@@ -166,6 +168,14 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
     }
 
     if (!selection) return;
+
+    if (
+      selection.kind === 'item' &&
+      (selectedItem?.slots?.length ?? 0) > 0
+    ) {
+      window.alert('하위 항목(슬롯)을 선택한 뒤 위치를 지정하세요.');
+      return;
+    }
 
     try {
       setSaving(true);
@@ -334,7 +344,8 @@ export function DatasheetDetail({ datasheetId }: DatasheetDetailProps) {
     editMode &&
     (editorOpen
       ? creating || Boolean(selectedItem)
-      : Boolean(selection));
+      : Boolean(selection) &&
+        !(selection?.kind === 'item' && (selectedItem?.slots?.length ?? 0) > 0));
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">

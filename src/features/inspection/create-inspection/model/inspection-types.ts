@@ -37,6 +37,25 @@ export type InspectionAnswerResponse = InspectionAnswerPayload & {
   itemId: number;
 };
 
+/** 항목 재검사 사유 기록 요청 */
+export type InspectionRecheckPayload = {
+  reason: string;
+  itemLabel: string | null;
+  /** 다시 검사하기 전 입력값 요약 */
+  previousSummary: string | null;
+};
+
+/** 재검사 이력 */
+export type InspectionRecheckResponse = {
+  itemId: number;
+  itemLabel: string | null;
+  reason: string;
+  previousSummary: string | null;
+  inspector: string | null;
+  /** yyyy-MM-ddTHH:mm:ss */
+  createdAt: string;
+};
+
 export type InspectionDetailResponse = {
   id: number;
   datasheetId: number;
@@ -52,6 +71,8 @@ export type InspectionDetailResponse = {
   ngCount: number | null;
   skipCount: number | null;
   fileName: string | null;
+  /** 재검사 이력 (오래된 순) */
+  rechecks: InspectionRecheckResponse[];
 };
 
 export type InspectionResult = 'OK' | 'NG';

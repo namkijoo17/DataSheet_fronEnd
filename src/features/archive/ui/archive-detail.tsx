@@ -150,7 +150,7 @@ export function ArchiveDetail({ inspectionId }: { inspectionId: number }) {
   ];
 
   return (
-    <section className="mx-auto w-full max-w-3xl space-y-4 pb-10">
+    <section className="w-full space-y-4 pb-10">
       <Link
         href="/archive"
         className="inline-flex items-center gap-1 text-sm font-semibold text-[#5f6368] hover:text-[#1f1f1f]"
@@ -272,6 +272,27 @@ export function ArchiveDetail({ inspectionId }: { inspectionId: number }) {
       <Card title="진행 이력">
         <ol className="space-y-2 text-sm">
           <TimelineRow label="검사 시작" value={detail.createdAt} />
+          {(detail.rechecks ?? []).map((recheck, index) => (
+            <li
+              key={`${recheck.itemId}-${recheck.createdAt}-${index}`}
+              className="rounded-xl bg-[#fff8eb] px-3 py-2.5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate font-semibold text-[#1f1f1f]">
+                  재검사 · {recheck.itemLabel?.trim() || `항목 ${recheck.itemId}`}
+                </span>
+                <span className="shrink-0 text-xs font-semibold text-[#5f6368]">
+                  {formatDateTime(recheck.createdAt)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#1f1f1f]">
+                사유 <span className="font-bold">{recheck.reason}</span>
+              </p>
+              {recheck.previousSummary && (
+                <p className="mt-0.5 text-xs text-[#8b8f96]">이전 입력 · {recheck.previousSummary}</p>
+              )}
+            </li>
+          ))}
           <TimelineRow label="마지막 저장" value={detail.updatedAt} />
           <TimelineRow label="검사 완료" value={detail.completedAt} />
         </ol>

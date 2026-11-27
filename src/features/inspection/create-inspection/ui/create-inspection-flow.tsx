@@ -16,6 +16,7 @@ import {
 import {
   completeInspection,
   discardInspection,
+  recordInspectionRecheck,
   restartInspection,
   startInspection,
 } from '../api/inspection-api';
@@ -42,6 +43,7 @@ import {
 } from '../model/use-inspections';
 import { BasicInfoForm } from './basic-info-form';
 import { DatasheetPicker } from './datasheet-picker';
+import { DebugItemSelect } from './debug-item-select';
 import {
   InspectionCompleteConfirm,
   type InspectionConfirmResult,
@@ -49,7 +51,8 @@ import {
 import { InspectionFillForm } from './inspection-fill-form';
 import { InspectionModeSelect } from './inspection-mode-select';
 
-type Step = 'datasheet' | 'basic' | 'mode' | 'inspect' | 'confirm';
+/** select: 디버깅 모드에서 검사할 항목을 고르는 단계 */
+type Step = 'datasheet' | 'basic' | 'mode' | 'select' | 'inspect' | 'confirm';
 
 export type ResumeInspectionData = {
   inspection: InspectionDetailResponse;
@@ -69,7 +72,14 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const userName = useAuthStore((state) => state.user?.name ?? '');
-  const [step, setStep] = useState<Step>(resume ? 'inspect' : 'datasheet');
+  // 디버깅 모드인데 항목 선택이 아직 없는 검사는 선택 단계부터 연다
+  const resumeStep: Step = !resume
+    ? 'datasheet'
+    : resume.inspection.mode === 'DEBUG' &&
+        Object.keys(resume.inspection.answers ?? {}).length === 0
+      ? 'select'
+      : 'inspect';
+  const [step, setStep] = useState<Step>(resumeStep);
   const [datasheet, setDatasheet] = useState<DatasheetSummary | null>(
     resume?.datasheet ?? null,
   );
@@ -138,12 +148,69 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
         resetAnswers({});
       }
       setMode(selectedMode);
-      setStep('inspect');
+      // 디버깅 모드는 먼저 검사할 항목을 고른다
+      setStep(selectedMode === 'DEBUG' ? 'select' : 'inspect');
       void refreshInProgress();
     } catch (error) {
       window.alert(errorMessage(error, '검사를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.'));
     } finally {
       setStarting(false);
+    }
+  };
+
+  /**
+   * 디버깅 모드: 고르지 않은 항목은 SKIP 답변으로 바꾸고 검사 화면으로 간다.
+   * 선택에서 빠지는 항목에 입력값이 있으면 확인을 받는다.
+   */
+  const handleSelectionConfirm = (selectedIds: number[], allItemIds: number[]) => {
+    const selectedSet = new Set(selectedIds);
+    const current = answersRef.current;
+    const hasInput = (answer: InspectionAnswers[number] | undefined) =>
+      Boolean(answer) &&
+      !answer!.skipped &&
+      (Boolean(answer!.value?.trim()) ||
+        answer!.judgment != null ||
+        answer!.slotIndex != null ||
+        Object.values(answer!.slotValues ?? {}).some((value) => value?.trim()));
+    const droppedWithInput = allItemIds.filter(
+      (id) => !selectedSet.has(id) && hasInput(current[id]),
+    ).length;
+    if (
+      droppedWithInput > 0 &&
+      !window.confirm(`선택에서 뺀 항목 ${droppedWithInput}건의 입력값이 지워집니다. 계속할까요?`)
+    ) {
+      return;
+    }
+
+    const next: InspectionAnswers = { ...current };
+    for (const itemId of allItemIds) {
+      if (selectedSet.has(itemId)) {
+        if (next[itemId]?.skipped) delete next[itemId];
+      } else {
+        next[itemId] = { skipped: true };
+      }
+    }
+    handleAnswersChange(next);
+    setStep('inspect');
+  };
+
+  /** 항목 재검사 사유를 서버에 기록한다. 실패하면 안내 후 throw 해서 재검사를 막는다. */
+  const handleRecheckReason = async (payload: {
+    itemId: number;
+    itemLabel: string;
+    reason: string;
+    previousSummary: string | null;
+  }) => {
+    if (inspectionId == null) return;
+    try {
+      await recordInspectionRecheck(inspectionId, payload.itemId, {
+        reason: payload.reason,
+        itemLabel: payload.itemLabel,
+        previousSummary: payload.previousSummary,
+      });
+    } catch (error) {
+      window.alert(errorMessage(error, '재검사 사유를 저장하지 못했습니다. 다시 시도해 주세요.'));
+      throw error;
     }
   };
 
@@ -277,6 +344,18 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
     );
   }
 
+  if (step === 'select') {
+    return (
+      <DebugItemSelect
+        datasheetId={datasheet.id}
+        datasheetLabel={datasheet.name}
+        answers={answers}
+        onBack={() => setStep('mode')}
+        onConfirm={handleSelectionConfirm}
+      />
+    );
+  }
+
   if (step === 'inspect') {
     return (
       <InspectionFillForm
@@ -290,6 +369,7 @@ export function CreateInspectionFlow({ resume }: CreateInspectionFlowProps) {
         saveStatus={saveStatus}
         startAtFirstUnanswered={inspectionId != null}
         onHold={() => void leaveToDashboard()}
+        onRecheckReason={handleRecheckReason}
         // 뒤로: 모드 선택 → (다시 뒤로) 기번/바코드 등 기본정보. 입력한 답변은 그대로 유지된다
         onBack={() => setStep('mode')}
         onComplete={() => setStep('confirm')}

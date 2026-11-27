@@ -83,7 +83,18 @@ export function DatasheetFieldList({
               return (
                 <li key={item.id} className="space-y-1.5">
                   <div className="flex items-center gap-1 px-1 pt-2">
-                    <div className="min-w-0 flex-1 px-2">
+                    {/* 상위 항목: 눌러도 PDF 위치는 표시되지 않는다(하위 항목을 눌러야 위치 표시). 속성 편집 대상으로만 선택됨 */}
+                    <button
+                      type="button"
+                      onClick={() => onSelect({ kind: 'item', itemId: item.id })}
+                      title="하위 항목을 눌러 PDF 위치를 확인하세요"
+                      className={cn(
+                        'min-w-0 flex-1 select-none rounded-xl px-2 py-1 text-left transition-colors hover:bg-[#f5f6f7] active:bg-[#eceef1]',
+                        selection?.kind === 'item' && selection.itemId === item.id
+                          ? 'bg-[#f5f6f7] ring-1 ring-[#d8dce3]'
+                          : '',
+                      )}
+                    >
                       <div className="flex items-center gap-2">
                         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[#eceef1] text-xs font-bold text-[#5f6368]">
                           {index + 1}
@@ -98,7 +109,7 @@ export function DatasheetFieldList({
                           </p>
                         </div>
                       </div>
-                    </div>
+                    </button>
                     {moveButtons}
                   </div>
 
